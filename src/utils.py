@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 import polars as pl
+import pandas as pd
 from loguru import logger
 
 
@@ -248,7 +249,10 @@ class DataProcessor:
         logger.info(f"Создание сводного отчета: {output_file}")
         
         try:
-            with pl.ExcelWriter(output_file) as writer:
+            # Используем pandas ExcelWriter с движком xlsxwriter, т.к. в polars (v<=1.31)
+            # отсутствует контекстный менеджер ExcelWriter, а метод write_excel поддерживает
+            # только одну вкладку. Pandas позволяет удобно записывать несколько листов.
+            with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
                 # Лист 1: Общая статистика
                 stats = DataProcessor.get_price_statistics(df)
                 
@@ -258,28 +262,29 @@ class DataProcessor:
                     {"Метрика": "Всего сетей", "Значение": stats["total_networks"]},
                     {"Метрика": "Всего городов", "Значение": stats["total_cities"]}
                 ])
-                
-                general_stats.write_excel(writer, worksheet="Общая статистика")
+
+                # Записываем каждый polars.DataFrame через конвертацию в pandas
+                general_stats.to_pandas().to_excel(writer, sheet_name="Общая статистика", index=False)
                 
                 # Лист 2: Статистика по топливу
                 fuel_df = pl.DataFrame(stats["fuel_types"])
-                fuel_df.write_excel(writer, worksheet="Статистика по топливу")
+                fuel_df.to_pandas().to_excel(writer, sheet_name="Статистика по топливу", index=False)
                 
                 # Лист 3: Статистика по сетям
                 networks_df = pl.DataFrame(stats["networks"])
-                networks_df.write_excel(writer, worksheet="Статистика по сетям")
+                networks_df.to_pandas().to_excel(writer, sheet_name="Статистика по сетям", index=False)
                 
                 # Лист 4: Самые дорогие города
                 cities_df = pl.DataFrame(stats["top_expensive_cities"])
-                cities_df.write_excel(writer, worksheet="Дорогие города")
+                cities_df.to_pandas().to_excel(writer, sheet_name="Дорогие города", index=False)
                 
                 # Лист 5: Сравнение сетей по АИ-95
                 comparison_95 = DataProcessor.compare_networks(df, "АИ-95")
-                comparison_95.write_excel(writer, worksheet="Сравнение АИ-95")
+                comparison_95.to_pandas().to_excel(writer, sheet_name="Сравнение АИ-95", index=False)
                 
                 # Лист 6: Самые дешевые заправки АИ-95
                 cheapest_95 = DataProcessor.find_cheapest_stations(df, "АИ-95", limit=20)
-                cheapest_95.write_excel(writer, worksheet="Дешевые АИ-95")
+                cheapest_95.to_pandas().to_excel(writer, sheet_name="Дешевые АИ-95", index=False)
             
             logger.info(f"Отчет сохранен: {output_file}")
             
