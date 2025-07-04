@@ -1,0 +1,7 @@
+polars>=0.20
+requests>=2.32
+beautifulsoup4>=4.12
+tqdm>=4.66
+selenium>=4.21
+webdriver-manager>=4.0
+lxml>=5.2
