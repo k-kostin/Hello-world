@@ -6,6 +6,7 @@ from .base import BaseParser
 from .russiabase_parser import RussiaBaseParser
 from .gazprom_parser import GazpromParser
 from .yandex_parser import YandexMapsParser
+from .tatneft_parser import TatneftParser
 
 
 class ParserFactory:
@@ -14,7 +15,8 @@ class ParserFactory:
     _PARSER_MAPPING = {
         "russiabase": RussiaBaseParser,
         "api": GazpromParser,
-        "selenium": YandexMapsParser
+        "selenium": YandexMapsParser,
+        "tatneft_api": TatneftParser
     }
     
     @classmethod
