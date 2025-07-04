@@ -49,6 +49,21 @@ GAS_STATION_NETWORKS = {
         "type": "selenium",
         "search_url": "https://yandex.ru/maps/213/moscow/search/%D0%B7%D0%B0%D0%BF%D1%80%D0%B0%D0%B2%D0%BA%D0%B8/",
         "scroll_count": 3
+    },
+    "tatneft": {
+        "name": "Татнефть",
+        "type": "tatneft_api",
+        "api_base": "https://api.gs.tatneft.ru/api/v2",
+        "stations_endpoint": "/azs/",
+        "station_detail_endpoint": "/azs/{station_id}",
+        "fuel_types_endpoint": "/azs/fuel_types/"
+    },
+    "neftmagistral": {
+        "name": "Нефтьмагистраль",
+        "type": "russiabase",
+        "brand_id": 424,
+        "max_pages": 60,
+        "base_url": "https://russiabase.ru/prices?brand=424"
     }
 }
 
