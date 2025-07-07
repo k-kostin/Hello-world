@@ -19,17 +19,6 @@ class RussiaBaseParser(BaseParser):
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
         
-    def _build_urls(self) -> List[str]:
-        """Строит список URL для парсинга всех страниц"""
-        base_url = self.config["base_url"]
-        max_pages = self.config.get("max_pages", 1)
-        
-        urls = [base_url]
-        for page in range(2, max_pages + 1):
-            urls.append(f"{base_url}&page={page}")
-        
-        return urls
-    
     def _fetch_page(self, url: str) -> List[Dict[str, Any]]:
         """Получает данные с одной страницы"""
         logger.debug(f"Fetching page: {url}")
@@ -55,24 +44,65 @@ class RussiaBaseParser(BaseParser):
         return json_data
     
     def fetch_data(self) -> List[Dict[str, Any]]:
-        """Получает данные со всех страниц"""
-        urls = self._build_urls()
+        """Получает данные со всех страниц с динамическим определением количества страниц"""
+        base_url = self.config["base_url"]
         all_data = []
+        consecutive_errors = 0
+        max_consecutive_errors = 3
+        page = 1
         
-        for i, url in enumerate(urls):
+        while True:
+            # Строим URL для текущей страницы
+            if page == 1:
+                url = base_url
+            else:
+                url = f"{base_url}&page={page}"
+            
             try:
-                logger.info(f"Обработка страницы {i+1}/{len(urls)}: {url}")
+                logger.info(f"Обработка страницы {page}: {url}")
                 page_data = self.retry_on_failure(self._fetch_page, url)
-                all_data.extend(page_data)
                 
-                if i < len(urls) - 1:  # Добавляем задержку между запросами
-                    self.add_delay()
+                # Если данные получены успешно
+                if page_data:
+                    all_data.extend(page_data)
+                    consecutive_errors = 0  # Сбрасываем счетчик ошибок
+                    logger.debug(f"Страница {page} обработана успешно, получено {len(page_data)} записей")
+                else:
+                    # Страница пустая - считаем это ошибкой
+                    consecutive_errors += 1
+                    logger.warning(f"Страница {page} пустая, consecutive_errors: {consecutive_errors}")
+                
+                # Добавляем задержку между запросами
+                self.add_delay()
+                
+            except requests.exceptions.HTTPError as e:
+                if "404" in str(e):
+                    consecutive_errors += 1
+                    logger.warning(f"Страница {page} не найдена (404), consecutive_errors: {consecutive_errors}")
+                else:
+                    logger.error(f"HTTP ошибка при загрузке страницы {url}: {e}")
+                    self.errors.append(f"HTTP error for {url}: {e}")
+                    consecutive_errors += 1
                     
             except Exception as e:
                 logger.error(f"Ошибка при загрузке страницы {url}: {e}")
                 self.errors.append(f"Page fetch error for {url}: {e}")
-                continue
+                consecutive_errors += 1
+            
+            # Проверяем, нужно ли остановить парсинг
+            if consecutive_errors >= max_consecutive_errors:
+                logger.info(f"Остановка парсинга: {consecutive_errors} consecutive ошибок подряд. "
+                           f"Всего обработано страниц: {page}")
+                break
+            
+            page += 1
+            
+            # Защита от бесконечного цикла - максимум 1000 страниц
+            if page > 1000:
+                logger.warning("Достигнут лимит в 1000 страниц, остановка парсинга")
+                break
         
+        logger.info(f"Парсинг завершен. Обработано страниц: {page-1}, получено записей: {len(all_data)}")
         return all_data
     
     def parse_station_data(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:
