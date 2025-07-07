@@ -565,12 +565,97 @@ class RussiaBaseRegionalParser:
         # Возвращаем как есть, если не удалось нормализовать
         return region_name
 
-    def get_region_data(self, region_id: int) -> Optional[PriceData]:
+    def _extract_regions_map(self, html_content: str) -> Dict[int, str]:
+        """
+        Извлекает полную карту регионов из JSON структуры в HTML коде
+        
+        Args:
+            html_content: HTML содержимое страницы
+            
+        Returns:
+            Dict[int, str]: Словарь {region_id: region_name}
+        """
+        try:
+            import json
+            import re
+            
+            # Ищем JSON структуру с регионами в HTML
+            # Паттерн: "regions":[{"id":"18","value":"Алтайский край"},...]
+            pattern = r'"regions":\s*(\[.*?\])'
+            match = re.search(pattern, html_content, re.DOTALL)
+            
+            if match:
+                regions_json_str = match.group(1)
+                regions_data = json.loads(regions_json_str)
+                
+                regions_map = {}
+                for region in regions_data:
+                    region_id = int(region.get('id'))
+                    region_name = region.get('value', '').strip()
+                    if region_id and region_name:
+                        regions_map[region_id] = region_name
+                
+                self.logger.info(f"Извлечена карта регионов: {len(regions_map)} регионов")
+                return regions_map
+            
+            self.logger.warning("JSON структура с регионами не найдена в HTML")
+            return {}
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения карты регионов: {e}")
+            return {}
+    
+    def get_all_regions_map(self) -> Dict[int, str]:
+        """
+        Получает полную карту всех доступных регионов
+        
+        Returns:
+            Dict[int, str]: Словарь {region_id: region_name}
+        """
+        # Делаем запрос к любой странице, чтобы получить JSON с регионами
+        url = f"{self.BASE_URL}?region=1"
+        self.logger.info("Получение полной карты регионов...")
+        
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            
+            html_content = response.text
+            
+            regions_map = self._extract_regions_map(html_content)
+            if regions_map:
+                self.logger.info(f"✅ Получена карта из {len(regions_map)} регионов")
+                return regions_map
+            else:
+                self.logger.warning("⚠️ Не удалось извлечь карту регионов")
+                return {}
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"❌ Ошибка получения карты регионов: {e}")
+            return {}
+        except Exception as e:
+            self.logger.error(f"❌ Ошибка получения карты регионов: {e}")
+            return {}
+
+    def _get_region_name_from_map(self, region_id: int, regions_map: Dict[int, str]) -> str:
+        """
+        Получает название региона из предварительно загруженной карты
+        
+        Args:
+            region_id: ID региона
+            regions_map: Карта регионов
+            
+        Returns:
+            str: Название региона
+        """
+        return regions_map.get(region_id, f"Регион {region_id}")
+
+    def get_region_data(self, region_id: int, regions_map: Optional[Dict[int, str]] = None) -> Optional[PriceData]:
         """
         Получает данные по конкретному региону
         
         Args:
             region_id: ID региона
+            regions_map: Предварительно загруженная карта регионов (опционально)
             
         Returns:
             Optional[PriceData]: Данные по региону или None при ошибке
@@ -584,8 +669,13 @@ class RussiaBaseRegionalParser:
             
             html_content = response.text
             
-            # Извлекаем правильное название региона
-            region_name = self._extract_region_name(html_content, region_id)
+            # Определяем название региона
+            if regions_map:
+                # Используем предварительно загруженную карту
+                region_name = self._get_region_name_from_map(region_id, regions_map)
+            else:
+                # Извлекаем из HTML (старый метод)
+                region_name = self._extract_region_name(html_content, region_id)
             
             # Извлекаем цены на топливо
             fuel_prices = self._extract_prices_from_html(html_content)
@@ -626,3 +716,33 @@ class RussiaBaseRegionalParser:
                 timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
                 status="error"
             )
+
+    def get_multiple_regions_data(self, region_ids: List[int]) -> List[PriceData]:
+        """
+        Получает данные по нескольким регионам с оптимизацией
+        
+        Args:
+            region_ids: Список ID регионов
+            
+        Returns:
+            List[PriceData]: Список данных по регионам
+        """
+        self.logger.info(f"Начинаем сбор данных для {len(region_ids)} регионов...")
+        
+        # Сначала получаем полную карту регионов
+        regions_map = self.get_all_regions_map()
+        
+        results = []
+        for i, region_id in enumerate(region_ids, 1):
+            self.logger.info(f"Обработка региона {i}/{len(region_ids)}: ID {region_id}")
+            
+            result = self.get_region_data(region_id, regions_map)
+            if result:
+                results.append(result)
+            
+            # Пауза между запросами
+            if i < len(region_ids):
+                time.sleep(self.delay)
+        
+        self.logger.info(f"Сбор завершен. Обработано {len(results)} регионов")
+        return results
