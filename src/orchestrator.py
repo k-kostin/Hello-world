@@ -100,7 +100,24 @@ class GasStationOrchestrator:
     def _save_combined_data(self, combined_df: pl.DataFrame):
         """Сохраняет объединенные данные всех сетей"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"all_gas_stations_{timestamp}.xlsx"
+        
+        # Определяем префикс файла в зависимости от того, все ли сети были запрошены
+        all_available_networks = set(GAS_STATION_NETWORKS.keys())
+        requested_networks = set(self.networks)
+        
+        if requested_networks == all_available_networks:
+            # Запрошены все доступные сети
+            filename = f"all_gas_stations_{timestamp}.xlsx"
+        else:
+            # Запрошены только определенные сети
+            # Если сетей мало (до 3), добавляем их названия в имя файла
+            successful_networks = list(self.results.keys())
+            if len(successful_networks) <= 3:
+                networks_suffix = "_".join(successful_networks)
+                filename = f"gas_stations_{networks_suffix}_{timestamp}.xlsx"
+            else:
+                filename = f"gas_stations_{timestamp}.xlsx"
+        
         filepath = os.path.join(OUTPUT_DIR, filename)
         
         try:
@@ -111,7 +128,14 @@ class GasStationOrchestrator:
                        .sort(["network_name", "city", "station_name", "fuel_type"]))
             
             df_clean.write_excel(filepath)
-            logger.info(f"Объединенные данные сохранены в {filepath}")
+            
+            # Логируем информацию о сохраненном файле
+            if requested_networks == all_available_networks:
+                logger.info(f"Объединенные данные ВСЕХ сетей сохранены в {filepath}")
+            else:
+                included_networks = list(self.results.keys())
+                logger.info(f"Объединенные данные выбранных сетей сохранены в {filepath}")
+                logger.info(f"Включенные сети: {', '.join(included_networks)}")
             
             # Статистика
             stats = (df_clean

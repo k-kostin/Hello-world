@@ -27,8 +27,9 @@ class DataProcessor:
             logger.error(f"Директория {data_dir} не существует")
             return None
         
-        # Ищем файлы с объединенными данными
-        files = [f for f in os.listdir(data_dir) if f.startswith("all_gas_stations_") and f.endswith(".xlsx")]
+        # Ищем файлы с объединенными данными (поддерживаем как новый, так и старый формат имен)
+        files = [f for f in os.listdir(data_dir) if 
+                (f.startswith("all_gas_stations_") or f.startswith("gas_stations_")) and f.endswith(".xlsx")]
         
         if not files:
             logger.error("Файлы с данными не найдены")
@@ -195,8 +196,9 @@ class DataProcessor:
         if not os.path.exists(data_dir):
             return None
         
-        # Ищем все файлы с данными
-        files = [f for f in os.listdir(data_dir) if f.startswith("all_gas_stations_") and f.endswith(".xlsx")]
+        # Ищем все файлы с данными (поддерживаем как новый, так и старый формат имен)
+        files = [f for f in os.listdir(data_dir) if 
+                (f.startswith("all_gas_stations_") or f.startswith("gas_stations_")) and f.endswith(".xlsx")]
         
         if len(files) < 2:
             logger.warning("Недостаточно исторических данных для анализа трендов")
@@ -208,8 +210,18 @@ class DataProcessor:
         
         for file in files:
             try:
-                # Извлекаем дату из названия файла
-                date_str = file.split("_")[3] + "_" + file.split("_")[4].split(".")[0]
+                # Извлекаем дату из названия файла (поддерживаем разные форматы)
+                parts = file.split("_")
+                if file.startswith("all_gas_stations_"):
+                    # Формат: all_gas_stations_YYYYMMDD_HHMMSS.xlsx
+                    date_str = parts[3] + "_" + parts[4].split(".")[0]
+                elif file.startswith("gas_stations_") and len(parts) >= 4:
+                    # Формат: gas_stations_[networks_]YYYYMMDD_HHMMSS.xlsx
+                    # Последние два элемента всегда дата и время
+                    date_str = parts[-2] + "_" + parts[-1].split(".")[0]
+                else:
+                    continue  # Пропускаем файлы с неподдерживаемым форматом
+                
                 file_date = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
                 
                 filepath = os.path.join(data_dir, file)
