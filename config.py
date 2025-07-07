@@ -27,14 +27,12 @@ GAS_STATION_NETWORKS = {
         "name": "Лукойл",
         "type": "russiabase",
         "brand_id": 119,
-        "max_pages": 98,
         "base_url": "https://russiabase.ru/prices?brand=119"
     },
     "bashneft": {
         "name": "Башнефть", 
         "type": "russiabase",
         "brand_id": 292,
-        "max_pages": 24,
         "base_url": "https://russiabase.ru/prices?brand=292"
     },
     "gazprom": {
@@ -62,7 +60,6 @@ GAS_STATION_NETWORKS = {
         "name": "Нефтьмагистраль",
         "type": "russiabase",
         "brand_id": 402,
-        "max_pages": 60,
         "base_url": "https://russiabase.ru/prices?brand=402"
     }
 }
