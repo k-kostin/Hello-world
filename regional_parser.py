@@ -242,9 +242,11 @@ def print_regional_results(results, duration):
         if result.status == 'success' and result.fuel_prices:
             successful_regions.append(result)
             for fuel_type, price in result.fuel_prices.items():
-                if fuel_type not in fuel_stats:
-                    fuel_stats[fuel_type] = []
-                fuel_stats[fuel_type].append(price)
+                # Исключаем АИ-80 из статистики
+                if fuel_type != 'АИ-80':
+                    if fuel_type not in fuel_stats:
+                        fuel_stats[fuel_type] = []
+                    fuel_stats[fuel_type].append(price)
     
     if fuel_stats:
         print(f"💰 Средние цены по России:")
@@ -255,16 +257,15 @@ def print_regional_results(results, duration):
             print(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} руб/л")
     
     print(f"\n📋 Топ-10 регионов по ценам:")
-    print("-" * 140)
-    print(f"{'Регион':<25} {'АИ-80':<7} {'АИ-92':<7} {'АИ-92+':<7} {'АИ-95':<7} {'АИ-95+':<7} {'АИ-98':<7} {'АИ-98+':<7} {'АИ-100':<8} {'ДТ':<7} {'ДТ+':<7} {'Газ':<7} {'Пропан':<7}")
-    print("-" * 140)
+    print("-" * 130)
+    print(f"{'Регион':<25} {'АИ-92':<7} {'АИ-92+':<7} {'АИ-95':<7} {'АИ-95+':<7} {'АИ-98':<7} {'АИ-98+':<7} {'АИ-100':<8} {'ДТ':<7} {'ДТ+':<7} {'Газ':<7} {'Пропан':<7}")
+    print("-" * 130)
     
     # Показываем первые 10 успешных регионов
     for i, result in enumerate(successful_regions[:10], 1):
         region_name = result.region_name[:24]
         prices = result.fuel_prices
         
-        ai80 = f"{prices.get('АИ-80', 0):.1f}" if prices.get('АИ-80') else "-"
         ai92 = f"{prices.get('АИ-92', 0):.1f}" if prices.get('АИ-92') else "-"
         ai92_plus = f"{prices.get('АИ-92+', 0):.1f}" if prices.get('АИ-92+') else "-"
         ai95 = f"{prices.get('АИ-95', 0):.1f}" if prices.get('АИ-95') else "-"
@@ -277,12 +278,12 @@ def print_regional_results(results, duration):
         gas = f"{prices.get('Газ', 0):.1f}" if prices.get('Газ') else "-"
         propan = f"{prices.get('Пропан', 0):.1f}" if prices.get('Пропан') else "-"
         
-        print(f"{region_name:<25} {ai80:<7} {ai92:<7} {ai92_plus:<7} {ai95:<7} {ai95_plus:<7} {ai98:<7} {ai98_plus:<7} {ai100:<8} {dt:<7} {dt_plus:<7} {gas:<7} {propan:<7}")
+        print(f"{region_name:<25} {ai92:<7} {ai92_plus:<7} {ai95:<7} {ai95_plus:<7} {ai98:<7} {ai98_plus:<7} {ai100:<8} {dt:<7} {dt_plus:<7} {gas:<7} {propan:<7}")
     
     if len(successful_regions) > 10:
         print(f"... и еще {len(successful_regions) - 10} регионов")
     
-    print("-" * 140)
+    print("-" * 130)
 
 
 def print_orchestrator_summary(summary, duration):
@@ -326,9 +327,10 @@ def save_regional_excel_report(results, filename):
                     'status': result.status
                 }
                 
-                # Добавляем цены по типам топлива как отдельные колонки
+                # Добавляем цены по типам топлива как отдельные колонки (исключая АИ-80)
                 for fuel_type, price in result.fuel_prices.items():
-                    base_row[f'{fuel_type}'] = price
+                    if fuel_type != 'АИ-80':
+                        base_row[f'{fuel_type}'] = price
                 
                 main_data.append(base_row)
         
@@ -337,9 +339,11 @@ def save_regional_excel_report(results, filename):
         for result in results:
             if result.status == 'success' and result.fuel_prices:
                 for fuel_type, price in result.fuel_prices.items():
-                    if fuel_type not in fuel_stats:
-                        fuel_stats[fuel_type] = []
-                    fuel_stats[fuel_type].append(price)
+                    # Исключаем АИ-80 из статистики Excel
+                    if fuel_type != 'АИ-80':
+                        if fuel_type not in fuel_stats:
+                            fuel_stats[fuel_type] = []
+                        fuel_stats[fuel_type].append(price)
         
         # Статистика по топливу
         fuel_summary = []
@@ -427,7 +431,9 @@ def save_regional_excel_report(results, filename):
                     }
                     if result.fuel_prices:
                         for fuel_type, price in result.fuel_prices.items():
-                            row[fuel_type] = price
+                            # Исключаем АИ-80 из простого Excel
+                            if fuel_type != 'АИ-80':
+                                row[fuel_type] = price
                     simple_data.append(row)
             
             if simple_data:

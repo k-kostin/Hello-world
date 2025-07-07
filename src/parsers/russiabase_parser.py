@@ -193,7 +193,6 @@ class RussiaBaseRegionalParser(BaseParser):
     
     # Маппинг названий топлива на сайте к стандартным названиям
     FUEL_TYPE_MAPPING = {
-        'АИ-80': ['ai-80', 'аи-80', 'аи 80', '80', 'ai80', 'АИ-80', 'ай-80', 'ай 80', 'аи80', 'Аи-80'],
         'АИ-92': ['ai-92', 'аи-92', 'аи 92', '92', 'ai92', 'АИ-92', 'ай-92', 'ай 92', 'аи92', 'Аи-92'],
         'АИ-92+': ['ai-92+', 'аи-92+', 'аи 92+', '92+', 'ai92+', 'АИ-92+', 'ай-92+', 'ай 92+', 'аи92+', 'Аи-92+'],
         'АИ-95': ['ai-95', 'аи-95', 'аи 95', '95', 'ai95', 'АИ-95', 'ай-95', 'ай 95', 'аи95', 'Аи-95'],
@@ -551,25 +550,37 @@ class RussiaBaseRegionalParser(BaseParser):
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             
-            # Стратегия 1: Поиск по JSON данным в скриптах
-            json_prices = self._extract_from_script_data(html_content)
-            if json_prices:
-                fuel_prices.update(json_prices)
-            
-            # Стратегия 2: Поиск по таблицам и структурированным элементам
+            # Стратегия 1: Поиск по таблицам и структурированным элементам (ПРИОРИТЕТ)
             table_prices = self._extract_from_tables(soup)
-            if table_prices and not fuel_prices:
+            if table_prices:
+                # Таблицы - самый надежный источник данных
                 fuel_prices.update(table_prices)
+                logger.debug(f"Извлечены цены из таблиц: {table_prices}")
             
-            # Стратегия 3: Поиск по регулярным выражениям
-            regex_prices = self._extract_with_regex(html_content)
-            if regex_prices and not fuel_prices:
-                fuel_prices.update(regex_prices)
+            # Стратегия 2: Поиск по JSON данным в скриптах (только если таблицы не дали результата)
+            if not fuel_prices:
+                json_prices = self._extract_from_script_data(html_content)
+                if json_prices:
+                    # Фильтруем плохие данные (только АИ-80 с нулевой ценой)
+                    filtered_json_prices = {k: v for k, v in json_prices.items() 
+                                          if not (k == 'АИ-80' and v == 0.0)}
+                    if filtered_json_prices:
+                        fuel_prices.update(filtered_json_prices)
+                        logger.debug(f"Извлечены цены из JSON: {filtered_json_prices}")
             
-            # Стратегия 4: Поиск по CSS селекторам
-            css_prices = self._extract_with_css_selectors(soup)
-            if css_prices and not fuel_prices:
-                fuel_prices.update(css_prices)
+            # Стратегия 3: Поиск по регулярным выражениям (только если предыдущие не дали результата)
+            if not fuel_prices:
+                regex_prices = self._extract_with_regex(html_content)
+                if regex_prices:
+                    fuel_prices.update(regex_prices)
+                    logger.debug(f"Извлечены цены regex: {regex_prices}")
+            
+            # Стратегия 4: Поиск по CSS селекторам (только если предыдущие не дали результата)
+            if not fuel_prices:
+                css_prices = self._extract_with_css_selectors(soup)
+                if css_prices:
+                    fuel_prices.update(css_prices)
+                    logger.debug(f"Извлечены цены CSS: {css_prices}")
                 
         except Exception as e:
             logger.error(f"Ошибка при извлечении цен: {e}")
@@ -744,20 +755,19 @@ class RussiaBaseRegionalParser(BaseParser):
                         
                         # Если заголовок не распознан, пробуем по позиции
                         if not fuel_type:
-                            # Типичный порядок на russiabase.ru: Аи-80, Аи-92, Аи-92+, Аи-95, Аи-95+, Аи-98, Аи-98+, Аи-100, ДТ, ДТ+, Газ, Пропан
+                            # Типичный порядок на russiabase.ru: Аи-92, Аи-92+, Аи-95, Аи-95+, Аи-98, Аи-98+, Аи-100, ДТ, ДТ+, Газ, Пропан (АИ-80 исключен)
                             position_mapping = {
-                                0: 'АИ-80',
-                                1: 'АИ-92',
-                                2: 'АИ-92+',
-                                3: 'АИ-95', 
-                                4: 'АИ-95+',
-                                5: 'АИ-98',
-                                6: 'АИ-98+',
-                                7: 'АИ-100',
-                                8: 'ДТ',
-                                9: 'ДТ+',
-                                10: 'Газ',
-                                11: 'Пропан'
+                                0: 'АИ-92',
+                                1: 'АИ-92+',
+                                2: 'АИ-95', 
+                                3: 'АИ-95+',
+                                4: 'АИ-98',
+                                5: 'АИ-98+',
+                                6: 'АИ-100',
+                                7: 'ДТ',
+                                8: 'ДТ+',
+                                9: 'Газ',
+                                10: 'Пропан'
                             }
                             fuel_type = position_mapping.get(i)
                         
@@ -911,9 +921,7 @@ class RussiaBaseRegionalParser(BaseParser):
                     return standard_name
         
         # Дополнительные проверки для конкретных паттернов (с учетом "+")
-        if re.search(r'80', fuel_text):
-            return 'АИ-80'
-        elif re.search(r'92\+', fuel_text):
+        if re.search(r'92\+', fuel_text):
             return 'АИ-92+'
         elif re.search(r'92', fuel_text):
             return 'АИ-92'
