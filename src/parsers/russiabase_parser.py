@@ -193,12 +193,15 @@ class RussiaBaseRegionalParser(BaseParser):
     
     # Маппинг названий топлива на сайте к стандартным названиям
     FUEL_TYPE_MAPPING = {
-        'АИ-92': ['ai-92', 'аи-92', 'аи 92', '92', 'ai92', 'АИ-92', 'ай-92', 'ай 92', 'Аи-92+', 'аи92'],
-        'АИ-95': ['ai-95', 'аи-95', 'аи 95', '95', 'ai95', 'АИ-95', 'ай-95', 'ай 95', 'Аи-95+', 'аи95'],
-        'АИ-98': ['ai-98', 'аи-98', 'аи 98', '98', 'ai98', 'АИ-98', 'ай-98', 'ай 98', 'аи98'],
-        'АИ-100': ['ai-100', 'аи-100', 'аи 100', '100', 'ai100', 'АИ-100', 'ай-100', 'ай 100', 'аи100'],
+        'АИ-92': ['ai-92', 'аи-92', 'аи 92', '92', 'ai92', 'АИ-92', 'ай-92', 'ай 92', 'аи92', 'Аи-92'],
+        'АИ-92+': ['ai-92+', 'аи-92+', 'аи 92+', '92+', 'ai92+', 'АИ-92+', 'ай-92+', 'ай 92+', 'аи92+', 'Аи-92+'],
+        'АИ-95': ['ai-95', 'аи-95', 'аи 95', '95', 'ai95', 'АИ-95', 'ай-95', 'ай 95', 'аи95', 'Аи-95'],
+        'АИ-95+': ['ai-95+', 'аи-95+', 'аи 95+', '95+', 'ai95+', 'АИ-95+', 'ай-95+', 'ай 95+', 'аи95+', 'Аи-95+'],
+        'АИ-98': ['ai-98', 'аи-98', 'аи 98', '98', 'ai98', 'АИ-98', 'ай-98', 'ай 98', 'аи98', 'Аи-98'],
+        'АИ-100': ['ai-100', 'аи-100', 'аи 100', '100', 'ai100', 'АИ-100', 'ай-100', 'ай 100', 'аи100', 'Аи-100'],
         'ДТ': ['дизель', 'диз', 'dt', 'дт', 'diesel', 'дизельное', 'ДТ', 'солярка', 'дизтопливо'],
-        'Пропан': ['газ', 'lpg', 'gas', 'суг', 'пропан', 'Пропан', 'сжиженный газ', 'автогаз']
+        'ДТ+': ['дизель+', 'диз+', 'dt+', 'дт+', 'diesel+', 'дизельное+', 'ДТ+', 'солярка+', 'дизтопливо+'],
+        'Пропан': ['газ', 'lpg', 'gas', 'суг', 'пропан', 'Пропан', 'сжиженный газ', 'автогаз', 'Газ']
     }
     
     def __init__(self, network_name: str = "regional_prices", config: Dict[str, Any] = {}):
@@ -738,30 +741,24 @@ class RussiaBaseRegionalParser(BaseParser):
                         
                         # Если заголовок не распознан, пробуем по позиции
                         if not fuel_type:
-                            # Типичный порядок: АИ-92, АИ-95, АИ-98, АИ-100, Дизель, Газ
+                            # Типичный порядок на russiabase.ru: Аи-92, Аи-92+, Аи-95, Аи-95+, Аи-98, Аи-100, ДТ, ДТ+, Газ
                             position_mapping = {
                                 0: 'АИ-92',
-                                1: 'АИ-92',  # АИ-92+
+                                1: 'АИ-92+',
                                 2: 'АИ-95', 
-                                3: 'АИ-95',  # АИ-95+
+                                3: 'АИ-95+',
                                 4: 'АИ-98',
                                 5: 'АИ-100',
                                 6: 'ДТ',
-                                7: 'ДТ',     # ДТ+
+                                7: 'ДТ+',
                                 8: 'Пропан'
                             }
                             fuel_type = position_mapping.get(i)
                         
                         if fuel_type:
-                            # Если у нас уже есть цена для этого типа топлива, берем более низкую (базовый тип)
-                            if fuel_type not in prices:
-                                prices[fuel_type] = price
-                                logger.debug(f"Найдена цена: {fuel_type} = {price}")
-                            else:
-                                # Для одинаковых типов топлива (АИ-92 и АИ-92+) берем более низкую цену
-                                if price < prices[fuel_type]:
-                                    prices[fuel_type] = price
-                                    logger.debug(f"Обновлена цена: {fuel_type} = {price}")
+                            # Сохраняем цену для каждого типа топлива отдельно (включая варианты с "+")
+                            prices[fuel_type] = price
+                            logger.debug(f"Найдена цена: {fuel_type} = {price}")
                             
         except Exception as e:
             logger.debug(f"Ошибка извлечения из таблицы russiabase.ru: {e}")
@@ -890,32 +887,38 @@ class RussiaBaseRegionalParser(BaseParser):
         if not fuel_text:
             return None
             
-        # Очищаем текст от лишних символов
+        # Очищаем текст от лишних символов (но сохраняем "+")
         fuel_text = re.sub(r'[^\w\-\+]', '', fuel_text.lower().strip())
         
-        # Проверяем точные совпадения
+        # Проверяем точные совпадения (приоритет для типов с "+")
         for standard_name, variants in self.FUEL_TYPE_MAPPING.items():
             for variant in variants:
                 variant_clean = re.sub(r'[^\w\-\+]', '', variant.lower())
                 if variant_clean == fuel_text:
                     return standard_name
         
-        # Проверяем частичные совпадения
+        # Проверяем частичные совпадения (приоритет для типов с "+")
         for standard_name, variants in self.FUEL_TYPE_MAPPING.items():
             for variant in variants:
                 variant_clean = re.sub(r'[^\w\-\+]', '', variant.lower())
                 if variant_clean in fuel_text or fuel_text in variant_clean:
                     return standard_name
         
-        # Дополнительные проверки для конкретных паттернов
-        if re.search(r'92', fuel_text):
+        # Дополнительные проверки для конкретных паттернов (с учетом "+")
+        if re.search(r'92\+', fuel_text):
+            return 'АИ-92+'
+        elif re.search(r'92', fuel_text):
             return 'АИ-92'
+        elif re.search(r'95\+', fuel_text):
+            return 'АИ-95+'
         elif re.search(r'95', fuel_text):
             return 'АИ-95'
         elif re.search(r'98', fuel_text):
             return 'АИ-98'
         elif re.search(r'100', fuel_text):
             return 'АИ-100'
+        elif re.search(r'(дт|диз|diesel).*\+', fuel_text):
+            return 'ДТ+'
         elif re.search(r'(дт|диз|diesel)', fuel_text):
             return 'ДТ'
         elif re.search(r'(газ|lpg|пропан)', fuel_text):
