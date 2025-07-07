@@ -103,27 +103,26 @@ class GasStationOrchestrator:
         """Сохраняет объединенные данные всех сетей"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Определяем префикс файла в зависимости от того, все ли сети были запрошены
+        # Определяем, включены ли все доступные сети
         all_available_networks = set(GAS_STATION_NETWORKS.keys())
         requested_networks = set(self.networks)
+        is_all_networks = requested_networks == all_available_networks
         
-        if requested_networks == all_available_networks:
-            # Запрошены все доступные сети
+        # Генерируем подходящее имя файла
+        if is_all_networks:
             filename = f"all_gas_stations_{timestamp}.xlsx"
+        elif len(requested_networks) <= 3:
+            # Для небольшого количества сетей включаем их названия в имя файла
+            # Очищаем названия сетей от символов, не подходящих для имен файлов
+            clean_networks = []
+            for network in sorted(requested_networks):
+                clean_name = "".join(c for c in network if c.isalnum() or c in "-_")
+                clean_networks.append(clean_name)
+            network_names = "_".join(clean_networks)
+            filename = f"gas_stations_{network_names}_{timestamp}.xlsx"
         else:
-            # Запрошены только определенные сети
-            # Если сетей мало (до 3), добавляем их названия в имя файла
-            successful_networks = list(self.results.keys())
-            if len(successful_networks) <= 3:
-                # Очищаем названия сетей от символов, не подходящих для имен файлов
-                clean_networks = []
-                for network in successful_networks:
-                    clean_name = "".join(c for c in network if c.isalnum() or c in "-_")
-                    clean_networks.append(clean_name)
-                networks_suffix = "_".join(clean_networks)
-                filename = f"gas_stations_{networks_suffix}_{timestamp}.xlsx"
-            else:
-                filename = f"gas_stations_{timestamp}.xlsx"
+            # Для многих сетей используем общее название
+            filename = f"gas_stations_{timestamp}.xlsx"
         
         filepath = os.path.join(OUTPUT_DIR, filename)
         
@@ -137,7 +136,7 @@ class GasStationOrchestrator:
             df_clean.write_excel(filepath)
             
             # Логируем информацию о сохраненном файле
-            if requested_networks == all_available_networks:
+            if is_all_networks:
                 logger.info(f"Объединенные данные ВСЕХ сетей сохранены в {filepath}")
             else:
                 included_networks = list(self.results.keys())

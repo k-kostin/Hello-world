@@ -27,12 +27,16 @@ class DataProcessor:
             logger.error(f"Директория {data_dir} не существует")
             return None
         
-        # Ищем файлы с объединенными данными (поддерживаем как новый, так и старый формат имен)
-        files = [f for f in os.listdir(data_dir) if 
-                (f.startswith("all_gas_stations_") or f.startswith("gas_stations_")) and f.endswith(".xlsx")]
+        # Ищем файлы с объединенными данными (поддерживает новую и старую схему именования)
+        all_files = os.listdir(data_dir)
         
-        if not files:
-            logger.error("Файлы с данными не найдены")
+        # Новая схема: all_gas_stations_, gas_stations_ (включая варианты с именами сетей)
+        combined_files = [f for f in all_files if 
+                         (f.startswith("all_gas_stations_") or f.startswith("gas_stations_"))
+                         and f.endswith(".xlsx")]
+        
+        if not combined_files:
+            logger.error("Файлы с объединенными данными не найдены")
             return None
         
         # Сортируем по дате в названии файла (извлекаем timestamp для корректной сортировки)
@@ -48,8 +52,8 @@ class DataProcessor:
             except Exception:
                 return "19700101_000000"  # fallback
         
-        files.sort(key=extract_timestamp, reverse=True)
-        latest_file = files[0]
+        combined_files.sort(key=extract_timestamp, reverse=True)
+        latest_file = combined_files[0]
         
         filepath = os.path.join(data_dir, latest_file)
         logger.info(f"Загружаем данные из {filepath}")
@@ -208,9 +212,13 @@ class DataProcessor:
         if not os.path.exists(data_dir):
             return None
         
-        # Ищем все файлы с данными (поддерживаем как новый, так и старый формат имен)
-        files = [f for f in os.listdir(data_dir) if 
-                (f.startswith("all_gas_stations_") or f.startswith("gas_stations_")) and f.endswith(".xlsx")]
+        # Ищем все файлы с данными (поддерживает новую и старую схему именования)
+        all_files = os.listdir(data_dir)
+        
+        # Новая схема: all_gas_stations_, gas_stations_ (включая варианты с именами сетей)
+        files = [f for f in all_files if 
+                (f.startswith("all_gas_stations_") or f.startswith("gas_stations_"))
+                and f.endswith(".xlsx")]
         
         if len(files) < 2:
             logger.warning("Недостаточно исторических данных для анализа трендов")
