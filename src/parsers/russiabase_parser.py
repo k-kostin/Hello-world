@@ -2,361 +2,394 @@
 Парсер для сайта russiabase.ru - региональные цены на топливо
 """
 import requests
-from bs4 import BeautifulSoup
-import json
 import re
-import pandas as pd
-from typing import List, Dict, Any, Optional
-from loguru import logger
+import time
+import logging
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from bs4 import BeautifulSoup
 
-from .base import BaseParser
-from config import DEFAULT_HEADERS, TIMEOUT
-from src.regions import region_manager
+@dataclass
+class PriceData:
+    """Структура данных для цены топлива"""
+    region_id: int
+    region_name: str
+    fuel_prices: Dict[str, float]
+    url: str
+    timestamp: str
+    status: str = "success"
 
-
-class RussiaBaseRegionalParser(BaseParser):
-    """Парсер для получения региональных цен с russiabase.ru"""
+class RussiaBaseRegionalParser:
+    """
+    Улучшенный парсер региональных цен на топливо с сайта russiabase.ru
     
-    def __init__(self, network_name: str, config: Dict[str, Any]):
-        super().__init__(network_name, config)
-        self.session = requests.Session()
-        self.session.headers.update(DEFAULT_HEADERS)
-        self.base_url = "https://russiabase.ru/prices"
+    Извлекает актуальные цены на различные виды топлива для регионов России.
+    """
+    
+    BASE_URL = "https://russiabase.ru/prices"
+    
+    # Маппинг названий топлива на сайте к стандартным названиям
+    FUEL_TYPE_MAPPING = {
+        'АИ-92': ['ai-92', 'аи-92', 'аи 92', '92', 'ai92', 'АИ-92'],
+        'АИ-95': ['ai-95', 'аи-95', 'аи 95', '95', 'ai95', 'АИ-95'],
+        'АИ-98': ['ai-98', 'аи-98', 'аи 98', '98', 'ai98', 'АИ-98'],
+        'АИ-100': ['ai-100', 'аи-100', 'аи 100', '100', 'ai100', 'АИ-100'],
+        'Дизель': ['дизель', 'диз', 'dt', 'дт', 'diesel', 'дизельное'],
+        'Газ': ['газ', 'lpg', 'gas', 'суг', 'пропан']
+    }
+    
+    def __init__(self, delay: float = 1.0):
+        """
+        Инициализация парсера
         
-    def _fetch_region_data(self, region_id: int, region_name: str) -> Dict[str, Any]:
-        """Получает данные о ценах на топливо для конкретного региона"""
-        url = f"{self.base_url}?region={region_id}"
-        logger.debug(f"Fetching region data: {url}")
+        Args:
+            delay: Задержка между запросами в секундах
+        """
+        self.delay = delay
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
+        self.logger = logging.getLogger(__name__)
+        
+    def get_region_prices(self, region_id: int, region_name: str) -> Optional[PriceData]:
+        """
+        Получает цены на топливо для конкретного региона
+        
+        Args:
+            region_id: ID региона
+            region_name: Название региона
+            
+        Returns:
+            PriceData или None при ошибке
+        """
+        url = f"{self.BASE_URL}?region={region_id}"
         
         try:
-            response = self.session.get(url, timeout=TIMEOUT)
+            self.logger.info(f"Парсинг региона: {region_name} (ID: {region_id})")
+            
+            response = self.session.get(url, timeout=30)
             response.raise_for_status()
             
-            soup = BeautifulSoup(response.text, 'html.parser')
+            # Проверяем успешность ответа
+            if response.status_code != 200:
+                self.logger.warning(f"Неожиданный статус: {response.status_code} для региона {region_name}")
+                return PriceData(
+                    region_id=region_id,
+                    region_name=region_name,
+                    fuel_prices={},
+                    url=url,
+                    timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                    status="error"
+                )
             
-            # Ищем данные в JSON-LD или других script тегах
-            fuel_prices = self._extract_fuel_prices(soup, region_id, region_name)
+            # Парсим HTML страницы
+            fuel_prices = self._extract_prices_from_html(response.text)
             
-            return {
-                'region_id': region_id,
-                'region_name': region_name,
-                'url': url,
-                'fuel_prices': fuel_prices,
-                'status': 'success'
-            }
+            self.logger.info(f"Найдены цены на топливо: {fuel_prices}")
+            
+            return PriceData(
+                region_id=region_id,
+                region_name=region_name,
+                fuel_prices=fuel_prices,
+                url=url,
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S")
+            )
             
         except requests.exceptions.RequestException as e:
-            logger.error(f"Ошибка при загрузке данных для региона {region_id} ({region_name}): {e}")
-            return {
-                'region_id': region_id,
-                'region_name': region_name,
-                'url': url,
-                'fuel_prices': {},
-                'status': 'error',
-                'error': str(e)
-            }
+            self.logger.error(f"Ошибка запроса для региона {region_name}: {e}")
+            return PriceData(
+                region_id=region_id,
+                region_name=region_name,
+                fuel_prices={},
+                url=url,
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                status="error"
+            )
+        except Exception as e:
+            self.logger.error(f"Неожиданная ошибка для региона {region_name}: {e}")
+            return PriceData(
+                region_id=region_id,
+                region_name=region_name,
+                fuel_prices={},
+                url=url,
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                status="error"
+            )
     
-    def _extract_fuel_prices(self, soup: BeautifulSoup, region_id: int, region_name: str) -> Dict[str, float]:
-        """Извлекает цены на топливо из HTML страницы"""
+    def _extract_prices_from_html(self, html_content: str) -> Dict[str, float]:
+        """
+        Извлекает цены на топливо из HTML контента
+        
+        Args:
+            html_content: HTML содержимое страницы
+            
+        Returns:
+            Словарь с ценами на топливо
+        """
         fuel_prices = {}
         
-        # Метод 1: Поиск в JSON-LD структурах
-        scripts = soup.find_all('script', type='application/ld+json')
-        for script in scripts:
-            try:
-                if script.string:
-                    data = json.loads(script.string)
-                    prices = self._parse_json_ld_fuel_data(data)
-                    fuel_prices.update(prices)
-            except (json.JSONDecodeError, AttributeError) as e:
-                logger.debug(f"Не удалось распарсить JSON-LD: {e}")
-                continue
-        
-        # Метод 2: Поиск в обычных script тегах с данными
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string and 'window.__NEXT_DATA__' in script.string:
-                try:
-                    # Извлекаем данные Next.js
-                    prices = self._parse_nextjs_data(script.string)
-                    fuel_prices.update(prices)
-                except Exception as e:
-                    logger.debug(f"Не удалось распарсить Next.js данные: {e}")
-                    continue
-        
-        # Метод 3: Поиск цен в тексте страницы
-        if not fuel_prices:
-            fuel_prices = self._extract_prices_from_text(soup)
-        
-        # Метод 4: Поиск в таблицах или списках
-        if not fuel_prices:
-            fuel_prices = self._extract_prices_from_tables(soup)
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Стратегия 1: Поиск по JSON данным в скриптах
+            json_prices = self._extract_from_script_data(html_content)
+            if json_prices:
+                fuel_prices.update(json_prices)
+            
+            # Стратегия 2: Поиск по таблицам и структурированным элементам
+            table_prices = self._extract_from_tables(soup)
+            if table_prices and not fuel_prices:
+                fuel_prices.update(table_prices)
+            
+            # Стратегия 3: Поиск по регулярным выражениям
+            regex_prices = self._extract_with_regex(html_content)
+            if regex_prices and not fuel_prices:
+                fuel_prices.update(regex_prices)
+            
+            # Стратегия 4: Поиск по CSS селекторам
+            css_prices = self._extract_with_css_selectors(soup)
+            if css_prices and not fuel_prices:
+                fuel_prices.update(css_prices)
+                
+        except Exception as e:
+            self.logger.error(f"Ошибка при извлечении цен: {e}")
         
         return fuel_prices
     
-    def _parse_json_ld_fuel_data(self, data: Dict[str, Any]) -> Dict[str, float]:
-        """Парсит данные о топливе из JSON-LD"""
-        prices = {}
-        
-        if isinstance(data, list):
-            for item in data:
-                prices.update(self._parse_json_ld_fuel_data(item))
-        elif isinstance(data, dict):
-            # Ищем поля с ценами на топливо
-            for key, value in data.items():
-                if isinstance(value, dict):
-                    prices.update(self._parse_json_ld_fuel_data(value))
-                elif isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, dict):
-                            prices.update(self._parse_json_ld_fuel_data(item))
-                elif key.lower() in ['price', 'cost'] and isinstance(value, (int, float, str)):
-                    # Пытаемся определить тип топлива по контексту
-                    fuel_type = self._detect_fuel_type_from_context(data)
-                    if fuel_type:
-                        try:
-                            price = float(str(value).replace(',', '.'))
-                            prices[fuel_type] = price
-                        except ValueError:
-                            pass
-        
-        return prices
-    
-    def _parse_nextjs_data(self, script_content: str) -> Dict[str, float]:
-        """Парсит данные из Next.js __NEXT_DATA__"""
+    def _extract_from_script_data(self, html_content: str) -> Dict[str, float]:
+        """Извлекает цены из JSON данных в script тегах"""
         prices = {}
         
         try:
-            # Ищем JSON данные в script
-            json_start = script_content.find('{')
-            json_end = script_content.rfind('}') + 1
+            # Ищем JSON данные в скриптах
+            json_patterns = [
+                r'window\.__INITIAL_STATE__\s*=\s*({.*?});',
+                r'window\.__DATA__\s*=\s*({.*?});',
+                r'data\s*:\s*({.*?"price".*?})',
+                r'"prices"\s*:\s*(\{.*?\})',
+                r'"fuel.*?"\s*:\s*(\d+\.?\d*)',
+            ]
             
-            if json_start != -1 and json_end > json_start:
-                json_str = script_content[json_start:json_end]
-                data = json.loads(json_str)
+            for pattern in json_patterns:
+                matches = re.finditer(pattern, html_content, re.DOTALL | re.IGNORECASE)
+                for match in matches:
+                    try:
+                        data_str = match.group(1)
+                        # Пытаемся найти цены в тексте
+                        price_matches = re.findall(r'"(аи-?\d+|дизель|газ)"?\s*:?\s*"?(\d+\.?\d*)"?', data_str, re.IGNORECASE)
+                        for fuel, price in price_matches:
+                            normalized_fuel = self._normalize_fuel_name(fuel)
+                            if normalized_fuel:
+                                prices[normalized_fuel] = float(price)
+                    except:
+                        continue
+                        
+        except Exception as e:
+            self.logger.debug(f"Ошибка извлечения из script данных: {e}")
+        
+        return prices
+    
+    def _extract_from_tables(self, soup: BeautifulSoup) -> Dict[str, float]:
+        """Извлекает цены из таблиц"""
+        prices = {}
+        
+        try:
+            # Ищем таблицы с ценами
+            tables = soup.find_all('table')
+            
+            for table in tables:
+                rows = table.find_all('tr')
                 
-                # Рекурсивно ищем цены в данных
-                prices = self._extract_prices_from_nested_data(data)
-        
-        except json.JSONDecodeError as e:
-            logger.debug(f"Ошибка парсинга Next.js данных: {e}")
-        
-        return prices
-    
-    def _extract_prices_from_text(self, soup: BeautifulSoup) -> Dict[str, float]:
-        """Извлекает цены из текста страницы используя регулярные выражения"""
-        prices = {}
-        text = soup.get_text()
-        
-        # Паттерны для поиска цен на топливо
-        patterns = [
-            r'АИ-92[^\d]*(\d+[.,]\d+)',
-            r'АИ-95[^\d]*(\d+[.,]\d+)',
-            r'АИ-98[^\d]*(\d+[.,]\d+)',
-            r'АИ-100[^\d]*(\d+[.,]\d+)',
-            r'[Дд]изель[^\d]*(\d+[.,]\d+)',
-            r'ДТ[^\d]*(\d+[.,]\d+)',
-            r'[Гг]аз[^\d]*(\d+[.,]\d+)',
-        ]
-        
-        fuel_types = ['АИ-92', 'АИ-95', 'АИ-98', 'АИ-100', 'Дизель', 'ДТ', 'Газ']
-        
-        for i, pattern in enumerate(patterns):
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            if matches:
-                try:
-                    price = float(matches[0].replace(',', '.'))
-                    fuel_type = fuel_types[i]
-                    if fuel_type == 'ДТ':
-                        fuel_type = 'Дизель'
-                    prices[fuel_type] = price
-                except ValueError:
-                    continue
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        for i, cell in enumerate(cells[:-1]):
+                            fuel_text = cell.get_text().strip()
+                            price_text = cells[i + 1].get_text().strip()
+                            
+                            # Проверяем, содержит ли текст название топлива
+                            normalized_fuel = self._normalize_fuel_name(fuel_text)
+                            if normalized_fuel:
+                                price = self._extract_price_from_text(price_text)
+                                if price:
+                                    prices[normalized_fuel] = price
+                                    
+        except Exception as e:
+            self.logger.debug(f"Ошибка извлечения из таблиц: {e}")
         
         return prices
     
-    def _extract_prices_from_tables(self, soup: BeautifulSoup) -> Dict[str, float]:
-        """Извлекает цены из таблиц на странице"""
+    def _extract_with_regex(self, html_content: str) -> Dict[str, float]:
+        """Извлекает цены с помощью регулярных выражений"""
         prices = {}
         
-        tables = soup.find_all('table')
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all(['td', 'th'])
-                if len(cells) >= 2:
-                    fuel_type = cells[0].get_text(strip=True)
-                    price_text = cells[1].get_text(strip=True)
+        try:
+            # Различные паттерны для поиска цен
+            patterns = [
+                # АИ-92: 55.5 или АИ-92</td><td>55.5
+                r'(АИ-?\d+|дизель|газ)[^\d]*?(\d+\.?\d*)\s*руб',
+                r'(АИ-?\d+|дизель|газ)[^>]*?[>:][\s]*(\d+\.?\d*)',
+                r'"(ai-?\d+|diesel|gas)"[^:]*?[:\s]*(\d+\.?\d*)',
+                # Для средних цен
+                r'средняя\s+цена[^:]*?(АИ-?\d+|дизель|газ)[^:]*?(\d+\.?\d*)',
+                # Цены в рублях
+                r'(\d+\.?\d*)\s*₽[^a-zA-Zа-яА-Я]*?(АИ-?\d+|дизель|газ)',
+            ]
+            
+            for pattern in patterns:
+                matches = re.finditer(pattern, html_content, re.IGNORECASE | re.DOTALL)
+                for match in matches:
+                    try:
+                        if len(match.groups()) >= 2:
+                            fuel_raw = match.group(1)
+                            price_raw = match.group(2)
+                            
+                            # Иногда порядок может быть обратным
+                            if not re.match(r'\d+\.?\d*', price_raw):
+                                fuel_raw, price_raw = price_raw, fuel_raw
+                            
+                            normalized_fuel = self._normalize_fuel_name(fuel_raw)
+                            if normalized_fuel:
+                                price = self._extract_price_from_text(price_raw)
+                                if price and price > 10 and price < 200:  # Разумные границы цен
+                                    prices[normalized_fuel] = price
+                    except:
+                        continue
+                        
+        except Exception as e:
+            self.logger.debug(f"Ошибка regex извлечения: {e}")
+        
+        return prices
+    
+    def _extract_with_css_selectors(self, soup: BeautifulSoup) -> Dict[str, float]:
+        """Извлекает цены с помощью CSS селекторов"""
+        prices = {}
+        
+        try:
+            # Различные селекторы для поиска цен
+            selectors = [
+                '.price-item',
+                '.fuel-price',
+                '[data-fuel]',
+                '.price-value',
+                '.gas-price',
+                'span[class*="price"]',
+                'div[class*="fuel"]',
+            ]
+            
+            for selector in selectors:
+                elements = soup.select(selector)
+                for element in elements:
+                    text = element.get_text().strip()
                     
-                    # Пытаемся извлечь цену
-                    price_match = re.search(r'(\d+[.,]\d+)', price_text)
-                    if price_match:
-                        try:
-                            price = float(price_match.group(1).replace(',', '.'))
-                            prices[fuel_type] = price
-                        except ValueError:
-                            continue
+                    # Ищем топливо и цену в тексте элемента
+                    fuel_match = re.search(r'(АИ-?\d+|дизель|газ)', text, re.IGNORECASE)
+                    price_match = re.search(r'(\d+\.?\d*)', text)
+                    
+                    if fuel_match and price_match:
+                        normalized_fuel = self._normalize_fuel_name(fuel_match.group(1))
+                        if normalized_fuel:
+                            price = float(price_match.group(1))
+                            if price > 10 and price < 200:  # Разумные границы цен
+                                prices[normalized_fuel] = price
+                                
+        except Exception as e:
+            self.logger.debug(f"Ошибка CSS селекторов: {e}")
         
         return prices
     
-    def _extract_prices_from_nested_data(self, data: Any) -> Dict[str, float]:
-        """Рекурсивно извлекает цены из вложенных данных"""
-        prices = {}
+    def _normalize_fuel_name(self, fuel_text: str) -> Optional[str]:
+        """
+        Нормализует название топлива к стандартному виду
         
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if key.lower() in ['prices', 'fuel', 'gas', 'petrol', 'diesel']:
-                    if isinstance(value, dict):
-                        for fuel_type, price in value.items():
-                            try:
-                                prices[fuel_type] = float(price)
-                            except (ValueError, TypeError):
-                                pass
-                elif isinstance(value, (dict, list)):
-                    prices.update(self._extract_prices_from_nested_data(value))
-        elif isinstance(data, list):
-            for item in data:
-                prices.update(self._extract_prices_from_nested_data(item))
+        Args:
+            fuel_text: Исходное название топлива
+            
+        Returns:
+            Стандартное название или None
+        """
+        if not fuel_text:
+            return None
+            
+        fuel_text = fuel_text.lower().strip()
         
-        return prices
-    
-    def _detect_fuel_type_from_context(self, data: Dict[str, Any]) -> Optional[str]:
-        """Определяет тип топлива по контексту данных"""
-        text = json.dumps(data, ensure_ascii=False).lower()
-        
-        if 'аи-92' in text or 'ai-92' in text:
-            return 'АИ-92'
-        elif 'аи-95' in text or 'ai-95' in text:
-            return 'АИ-95'
-        elif 'аи-98' in text or 'ai-98' in text:
-            return 'АИ-98'
-        elif 'аи-100' in text or 'ai-100' in text:
-            return 'АИ-100'
-        elif 'дизель' in text or 'diesel' in text or 'дт' in text:
-            return 'Дизель'
-        elif 'газ' in text or 'gas' in text or 'пропан' in text:
-            return 'Газ'
+        for standard_name, variants in self.FUEL_TYPE_MAPPING.items():
+            for variant in variants:
+                if variant.lower() in fuel_text:
+                    return standard_name
         
         return None
     
-    def fetch_data(self) -> List[Dict[str, Any]]:
-        """Получает данные по всем регионам"""
-        logger.info("Начинаем сбор данных по регионам с russiabase.ru")
+    def _extract_price_from_text(self, text: str) -> Optional[float]:
+        """
+        Извлекает числовую цену из текста
         
-        regions = region_manager.get_all_regions()
-        all_data = []
+        Args:
+            text: Текст, содержащий цену
+            
+        Returns:
+            Цена как float или None
+        """
+        if not text:
+            return None
+            
+        try:
+            # Удаляем все кроме цифр, точек и запятых
+            clean_text = re.sub(r'[^\d.,]', '', text.strip())
+            
+            if not clean_text:
+                return None
+            
+            # Заменяем запятые на точки
+            clean_text = clean_text.replace(',', '.')
+            
+            # Если несколько точек, берем только первую
+            if clean_text.count('.') > 1:
+                parts = clean_text.split('.')
+                clean_text = parts[0] + '.' + ''.join(parts[1:])
+            
+            price = float(clean_text)
+            
+            # Проверяем разумность цены
+            if 10 <= price <= 200:
+                return price
+                
+        except (ValueError, AttributeError):
+            pass
+        
+        return None
+    
+    def parse_multiple_regions(self, regions: List[Dict[str, Any]]) -> List[PriceData]:
+        """
+        Парсит цены для нескольких регионов
+        
+        Args:
+            regions: Список регионов с ключами 'id' и 'name'
+            
+        Returns:
+            Список объектов PriceData
+        """
+        results = []
         
         for region in regions:
-            region_id = region['id']
-            region_name = region['name']
+            region_id = region.get('id')
+            region_name = region.get('name', f'Регион {region_id}')
             
-            logger.info(f"Обрабатываем регион {region_id}: {region_name}")
+            if region_id is None:
+                self.logger.warning(f"Пропущен регион без ID: {region}")
+                continue
             
-            try:
-                region_data = self.retry_on_failure(
-                    self._fetch_region_data, 
-                    region_id, 
-                    region_name
-                )
-                all_data.append(region_data)
-                
-                # Добавляем задержку между запросами
-                self.add_delay()
-                
-            except Exception as e:
-                logger.error(f"Ошибка при обработке региона {region_id} ({region_name}): {e}")
-                self.errors.append(f"Region {region_id} error: {e}")
-                
-                # Добавляем запись об ошибке
-                all_data.append({
-                    'region_id': region_id,
-                    'region_name': region_name,
-                    'url': f"{self.base_url}?region={region_id}",
-                    'fuel_prices': {},
-                    'status': 'error',
-                    'error': str(e)
-                })
-        
-        logger.info(f"Сбор данных завершен. Обработано {len(all_data)} регионов")
-        return all_data
-    
-    def create_fuel_prices_table(self, data: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Создает таблицу с ценами на топливо по регионам"""
-        rows = []
-        
-        for region_data in data:
-            row = {
-                'region_id': region_data['region_id'],
-                'region_name': region_data['region_name'],
-                'status': region_data['status']
-            }
+            result = self.get_region_prices(region_id, region_name)
+            if result:
+                results.append(result)
             
-            # Добавляем цены на топливо как отдельные колонки
-            fuel_prices = region_data.get('fuel_prices', {})
-            for fuel_type, price in fuel_prices.items():
-                row[fuel_type] = price
-            
-            rows.append(row)
+            # Задержка между запросами
+            if self.delay > 0:
+                time.sleep(self.delay)
         
-        df = pd.DataFrame(rows)
-        
-        # Сортируем колонки: сначала служебные, потом топливо
-        service_cols = ['region_id', 'region_name', 'status']
-        fuel_cols = [col for col in df.columns if col not in service_cols]
-        fuel_cols.sort()  # Сортируем названия топлива
-        
-        df = df[service_cols + fuel_cols]
-        
-        return df
-    
-    def save_to_excel(self, data: List[Dict[str, Any]], filename: str = 'russiabase_regional_prices.xlsx'):
-        """Сохраняет данные в Excel файл"""
-        df = self.create_fuel_prices_table(data)
-        
-        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-            # Основная таблица
-            df.to_excel(writer, sheet_name='Regional_Prices', index=False)
-            
-            # Сводная статистика
-            stats = self._create_statistics(data)
-            stats_df = pd.DataFrame(list(stats.items()), columns=['Metric', 'Value'])
-            stats_df.to_excel(writer, sheet_name='Statistics', index=False)
-            
-            # Ошибки
-            if self.errors:
-                errors_df = pd.DataFrame(self.errors, columns=['Error'])
-                errors_df.to_excel(writer, sheet_name='Errors', index=False)
-        
-        logger.info(f"Данные сохранены в файл: {filename}")
-        return filename
-    
-    def _create_statistics(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Создает статистику по собранным данным"""
-        total_regions = len(data)
-        successful_regions = len([d for d in data if d['status'] == 'success'])
-        error_regions = total_regions - successful_regions
-        
-        # Собираем все уникальные типы топлива
-        fuel_types = set()
-        for region_data in data:
-            fuel_types.update(region_data.get('fuel_prices', {}).keys())
-        
-        return {
-            'Total_Regions': total_regions,
-            'Successful_Regions': successful_regions,
-            'Error_Regions': error_regions,
-            'Success_Rate_%': round((successful_regions / total_regions) * 100, 2) if total_regions > 0 else 0,
-            'Unique_Fuel_Types': len(fuel_types),
-            'Fuel_Types_Found': ', '.join(sorted(fuel_types))
-        }
-    
-    def parse_station_data(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Парсит данные станций из региональных данных
-        
-        Примечание: Этот метод не используется в региональном парсере,
-        так как мы работаем с агрегированными данными по регионам
-        """
-        # Для регионального парсера этот метод не актуален
-        # так как мы собираем средние цены по регионам, а не по отдельным станциям
-        return []
+        return results
+
+    def get_available_fuel_types(self) -> List[str]:
+        """Возвращает список доступных типов топлива"""
+        return list(self.FUEL_TYPE_MAPPING.keys())

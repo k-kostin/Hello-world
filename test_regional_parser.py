@@ -1,142 +1,230 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Тестовый скрипт для нового регионального парсера russiabase.ru
+Тестирование улучшенного регионального парсера для russiabase.ru
 """
 import sys
-import os
+import pandas as pd
+import logging
+from datetime import datetime
 from pathlib import Path
 
-# Добавляем корневую директорию проекта в путь
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+# Добавляем путь к модулям
+sys.path.append(str(Path(__file__).parent / 'src'))
 
-from src.parsers.russiabase_parser import RussiaBaseRegionalParser
-from loguru import logger
+from parsers.russiabase_parser import RussiaBaseRegionalParser
 
-def test_regional_parser():
-    """Тестирует региональный парсер"""
-    logger.info("Запуск тестирования регионального парсера russiabase.ru")
-    
-    # Конфигурация для парсера
-    config = {
-        "type": "russiabase_regional",
-        "name": "RussiaBase Regional Prices",
-        "description": "Парсер региональных цен на топливо с russiabase.ru"
-    }
-    
-    # Создаем экземпляр парсера
-    parser = RussiaBaseRegionalParser("russiabase_regional", config)
-    
-    try:
-        # Тестируем загрузку данных только для нескольких регионов
-        logger.info("Начинаем сбор данных...")
-        
-        # Для тестирования используем только несколько регионов
-        test_regions = [
-            {'id': 77, 'name': 'Москва'},
-            {'id': 78, 'name': 'Санкт-Петербург'},
-            {'id': 40, 'name': 'Курская область'},
-            {'id': 23, 'name': 'Краснодарский край'},
-            {'id': 16, 'name': 'Республика Татарстан'}
-        ]
-        
-        # Собираем данные для тестовых регионов
-        test_data = []
-        for region in test_regions:
-            logger.info(f"Тестируем регион: {region['name']} (ID: {region['id']})")
-            region_data = parser._fetch_region_data(region['id'], region['name'])
-            test_data.append(region_data)
-            
-            # Показываем результат
-            if region_data['status'] == 'success':
-                fuel_prices = region_data.get('fuel_prices', {})
-                if fuel_prices:
-                    logger.info(f"Найдены цены на топливо: {fuel_prices}")
-                else:
-                    logger.warning(f"Цены на топливо не найдены для региона {region['name']}")
-            else:
-                logger.error(f"Ошибка для региона {region['name']}: {region_data.get('error', 'Unknown error')}")
-            
-            # Небольшая пауза между запросами
-            parser.add_delay()
-        
-        # Создаем таблицу с результатами
-        logger.info("Создаем таблицу с результатами...")
-        df = parser.create_fuel_prices_table(test_data)
-        
-        # Выводим таблицу в консоль
-        print("\n" + "="*80)
-        print("РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ РЕГИОНАЛЬНОГО ПАРСЕРА")
-        print("="*80)
-        print(df.to_string(index=False))
-        print("="*80)
-        
-        # Сохраняем в Excel файл
-        filename = parser.save_to_excel(test_data, 'test_regional_prices.xlsx')
-        logger.info(f"Результаты сохранены в файл: {filename}")
-        
-        # Статистика
-        stats = parser._create_statistics(test_data)
-        print("\nСТАТИСТИКА:")
-        for key, value in stats.items():
-            print(f"  {key}: {value}")
-        
-        logger.info("Тестирование завершено успешно!")
-        
-    except Exception as e:
-        logger.error(f"Ошибка при тестировании: {e}")
-        raise
-
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 def test_single_region():
-    """Тестирует парсинг одного региона (Курская область)"""
+    """Тест парсинга одного региона"""
     logger.info("Тестирование парсинга одного региона...")
     
-    config = {"type": "russiabase_regional"}
-    parser = RussiaBaseRegionalParser("test", config)
+    parser = RussiaBaseRegionalParser(delay=0.5)
     
     # Тестируем Курскую область (ID: 40)
-    region_data = parser._fetch_region_data(40, "Курская область")
+    result = parser.get_region_prices(40, "Курская область")
     
-    print("\n" + "="*60)
-    print("ТЕСТ ОДНОГО РЕГИОНА: КУРСКАЯ ОБЛАСТЬ")
-    print("="*60)
-    print(f"Статус: {region_data['status']}")
-    print(f"URL: {region_data['url']}")
-    
-    if region_data['status'] == 'success':
-        fuel_prices = region_data.get('fuel_prices', {})
-        if fuel_prices:
-            print("Найденные цены на топливо:")
-            for fuel_type, price in fuel_prices.items():
+    if result:
+        print("\n" + "="*60)
+        print("ТЕСТ ОДНОГО РЕГИОНА: КУРСКАЯ ОБЛАСТЬ")
+        print("="*60)
+        print(f"Статус: {result.status}")
+        print(f"URL: {result.url}")
+        print("Найденные цены на топливо:")
+        
+        if result.fuel_prices:
+            for fuel_type, price in result.fuel_prices.items():
                 print(f"  {fuel_type}: {price} руб.")
         else:
-            print("Цены на топливо не найдены")
+            print("  Цены не найдены")
+        
+        print("="*60)
+        print()
+        
+        return result
     else:
-        print(f"Ошибка: {region_data.get('error', 'Unknown error')}")
-    
-    print("="*60)
+        print("Ошибка: не удалось получить данные для региона")
+        return None
 
-
-if __name__ == "__main__":
-    # Настройка логирования
-    logger.remove()
-    logger.add(sys.stdout, level="INFO", format="{time:HH:mm:ss} | {level} | {message}")
+def test_multiple_regions():
+    """Тест парсинга нескольких регионов"""
+    logger.info("Запуск тестирования регионального парсера russiabase.ru")
     
-    # Запускаем тесты
-    logger.info("Начинаем тестирование нового регионального парсера...")
+    # Тестовые регионы
+    test_regions = [
+        {'id': 77, 'name': 'Москва'},
+        {'id': 78, 'name': 'Санкт-Петербург'},
+        {'id': 40, 'name': 'Курская область'},
+        {'id': 23, 'name': 'Краснодарский край'},
+        {'id': 16, 'name': 'Республика Татарстан'},
+    ]
+    
+    # Создаем парсер
+    parser = RussiaBaseRegionalParser(delay=2.0)  # 2 секунды между запросами
+    
+    logger.info("Начинаем сбор данных...")
+    
+    # Парсим регионы
+    results = parser.parse_multiple_regions(test_regions)
+    
+    logger.info("Создаем таблицу с результатами...")
+    
+    # Создаем DataFrame для результатов
+    rows = []
+    all_fuel_types = set()
+    
+    for result in results:
+        row = {
+            'region_id': result.region_id,
+            'region_name': result.region_name,
+            'status': result.status
+        }
+        
+        # Добавляем цены на топливо
+        for fuel_type, price in result.fuel_prices.items():
+            row[fuel_type] = price
+            all_fuel_types.add(fuel_type)
+        
+        rows.append(row)
+    
+    # Создаем DataFrame
+    df = pd.DataFrame(rows)
+    
+    # Убеждаемся, что все типы топлива представлены как колонки
+    service_cols = ['region_id', 'region_name', 'status']
+    fuel_cols = sorted(list(all_fuel_types))
+    
+    # Переупорядочиваем колонки
+    for col in fuel_cols:
+        if col not in df.columns:
+            df[col] = None
+    
+    df = df[service_cols + fuel_cols]
+    
+    # Выводим результаты
+    print("\n" + "="*80)
+    print("РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ РЕГИОНАЛЬНОГО ПАРСЕРА")
+    print("="*80)
+    print(df.to_string(index=False))
+    print("="*80)
+    
+    # Сохраняем результаты в Excel
+    filename = 'test_regional_prices.xlsx'
+    
+    with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+        # Основная таблица
+        df.to_excel(writer, sheet_name='Regional_Prices', index=False)
+        
+        # Статистика
+        stats = create_statistics(results, all_fuel_types)
+        stats_df = pd.DataFrame(list(stats.items()), columns=['Metric', 'Value'])
+        stats_df.to_excel(writer, sheet_name='Statistics', index=False)
+        
+        # Детальная информация
+        details = []
+        for result in results:
+            details.append({
+                'Region_ID': result.region_id,
+                'Region_Name': result.region_name,
+                'URL': result.url,
+                'Timestamp': result.timestamp,
+                'Status': result.status,
+                'Fuel_Count': len(result.fuel_prices)
+            })
+        
+        details_df = pd.DataFrame(details)
+        details_df.to_excel(writer, sheet_name='Details', index=False)
+    
+    logger.info(f"Данные сохранены в файл: {filename}")
+    logger.info(f"Результаты сохранены в файл: {filename}")
+    
+    # Выводим статистику
+    print("\nСТАТИСТИКА:")
+    for key, value in stats.items():
+        print(f"  {key}: {value}")
+    
+    logger.info("Тестирование завершено успешно!")
+    
+    return results, df
+
+def create_statistics(results, fuel_types):
+    """Создает статистику по результатам"""
+    total_regions = len(results)
+    successful_regions = len([r for r in results if r.status == 'success'])
+    error_regions = total_regions - successful_regions
+    
+    # Подсчитываем найденные типы топлива
+    found_fuel_types = set()
+    for result in results:
+        found_fuel_types.update(result.fuel_prices.keys())
+    
+    return {
+        'Total_Regions': total_regions,
+        'Successful_Regions': successful_regions,
+        'Error_Regions': error_regions,
+        'Success_Rate_%': round((successful_regions / total_regions) * 100, 2) if total_regions > 0 else 0,
+        'Unique_Fuel_Types': len(found_fuel_types),
+        'Fuel_Types_Found': ', '.join(sorted(found_fuel_types)) if found_fuel_types else 'None'
+    }
+
+def test_parser_methods():
+    """Тест отдельных методов парсера"""
+    logger.info("Тестирование методов парсера...")
+    
+    parser = RussiaBaseRegionalParser()
+    
+    # Тест нормализации названий топлива
+    test_fuel_names = [
+        'АИ-92', 'аи-95', 'AI-98', 'дизель', 'ГАЗ', 'пропан',
+        'ai92', 'Дизельное топливо', '95', 'Бензин АИ-95'
+    ]
+    
+    print("\nТест нормализации названий топлива:")
+    for name in test_fuel_names:
+        normalized = parser._normalize_fuel_name(name)
+        print(f"  '{name}' -> '{normalized}'")
+    
+    # Тест извлечения цены из текста
+    test_prices = [
+        '55.5', '61,23', '72.45 руб.', '55.5754', 'цена: 68.90', 'нет цены'
+    ]
+    
+    print("\nТест извлечения цен из текста:")
+    for text in test_prices:
+        price = parser._extract_price_from_text(text)
+        print(f"  '{text}' -> {price}")
+    
+    # Показываем доступные типы топлива
+    print(f"\nДоступные типы топлива: {parser.get_available_fuel_types()}")
+
+def main():
+    """Главная функция для запуска всех тестов"""
+    print("="*80)
+    print("ТЕСТИРОВАНИЕ УЛУЧШЕННОГО РЕГИОНАЛЬНОГО ПАРСЕРА RUSSIABASE.RU")
+    print("="*80)
     
     try:
+        # Тест отдельных методов
+        test_parser_methods()
+        
         # Тест одного региона
         test_single_region()
         
-        print("\n")
-        
         # Тест нескольких регионов
-        test_regional_parser()
+        test_multiple_regions()
         
     except KeyboardInterrupt:
         logger.info("Тестирование прервано пользователем")
     except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-        sys.exit(1)
+        logger.error(f"Ошибка во время тестирования: {e}")
+        raise
+
+if __name__ == "__main__":
+    main()
