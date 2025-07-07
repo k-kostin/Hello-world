@@ -273,13 +273,14 @@ class DataProcessor:
         return trends_df
     
     @staticmethod
-    def export_summary_report(df: pl.DataFrame, output_file: str = "price_analysis_report.xlsx"):
+    def export_summary_report(df: pl.DataFrame, output_file: str = "price_analysis_report.xlsx", include_regional: bool = True):
         """
         Экспортирует сводный отчет в Excel
         
         Args:
             df: DataFrame с данными
             output_file: Имя выходного файла
+            include_regional: Включить ли региональные цены в отчет
         """
         logger.info(f"Создание сводного отчета: {output_file}")
         
@@ -320,11 +321,159 @@ class DataProcessor:
                 # Лист 6: Самые дешевые заправки АИ-95
                 cheapest_95 = DataProcessor.find_cheapest_stations(df, "АИ-95", limit=20)
                 cheapest_95.to_pandas().to_excel(writer, sheet_name="Дешевые АИ-95", index=False)
+                
+                # Лист 7: Региональные цены (если включено и данные доступны)
+                if include_regional:
+                    regional_data = DataProcessor.load_regional_data()
+                    if regional_data is not None and len(regional_data) > 0:
+                        # Региональные цены по типам топлива
+                        regional_data.to_pandas().to_excel(writer, sheet_name="Региональные цены", index=False)
+                        
+                        # Статистика по регионам
+                        regional_stats = DataProcessor.get_regional_statistics(regional_data)
+                        if regional_stats is not None:
+                            regional_stats.to_pandas().to_excel(writer, sheet_name="Статистика по регионам", index=False)
+                        
+                        # Сравнение региональных и сетевых цен
+                        comparison_data = DataProcessor.compare_regional_vs_network_prices(df, regional_data)
+                        if comparison_data is not None:
+                            comparison_data.to_pandas().to_excel(writer, sheet_name="Регионы vs Сети", index=False)
+                        
+                        logger.info("Региональные данные добавлены в отчет")
+                    else:
+                        logger.info("Региональные данные недоступны, пропускаем")
             
             logger.info(f"Отчет сохранен: {output_file}")
             
         except Exception as e:
             logger.error(f"Ошибка создания отчета: {e}")
+
+    @staticmethod
+    def load_regional_data() -> Optional[pl.DataFrame]:
+        """
+        Загружает региональные данные из JSON файлов или базы данных
+        
+        Returns:
+            DataFrame с региональными ценами или None если данные не найдены
+        """
+        import glob
+        import json
+        
+        try:
+            # Ищем JSON файлы с региональными данными
+            json_files = glob.glob("regional_prices_*.json")
+            
+            if not json_files:
+                # Также ищем в директории data
+                json_files = glob.glob("data/regional_prices_*.json")
+            
+            if not json_files:
+                logger.info("Файлы с региональными данными не найдены")
+                return None
+            
+            # Берем самый новый файл
+            latest_file = max(json_files)
+            logger.info(f"Загружаем региональные данные из {latest_file}")
+            
+            with open(latest_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Преобразуем в плоский формат для DataFrame
+            regional_records = []
+            for region_info in data:
+                if region_info.get('status') == 'success' and region_info.get('fuel_prices'):
+                    region_id = region_info.get('region_id')
+                    region_name = region_info.get('region_name')
+                    fuel_prices = region_info.get('fuel_prices', {})
+                    timestamp = region_info.get('timestamp')
+                    
+                    for fuel_type, price in fuel_prices.items():
+                        if price and price > 0:
+                            regional_records.append({
+                                'region_id': region_id,
+                                'region_name': region_name,
+                                'fuel_type': fuel_type,
+                                'price': float(price),
+                                'timestamp': timestamp,
+                                'source': 'regional_parser'
+                            })
+            
+            if regional_records:
+                return pl.DataFrame(regional_records)
+            else:
+                logger.info("Нет валидных региональных данных")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Ошибка загрузки региональных данных: {e}")
+            return None
+
+    @staticmethod
+    def get_regional_statistics(regional_df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        """
+        Вычисляет статистику по региональным данным
+        
+        Args:
+            regional_df: DataFrame с региональными данными
+            
+        Returns:
+            DataFrame со статистикой по регионам
+        """
+        try:
+            # Статистика по регионам
+            regional_stats = regional_df.group_by("region_name").agg([
+                pl.col("fuel_type").n_unique().alias("fuel_types_count"),
+                pl.col("price").mean().alias("avg_price"),
+                pl.col("price").min().alias("min_price"),
+                pl.col("price").max().alias("max_price"),
+                pl.count().alias("records_count")
+            ]).sort("avg_price", descending=True)
+            
+            return regional_stats
+            
+        except Exception as e:
+            logger.error(f"Ошибка вычисления региональной статистики: {e}")
+            return None
+
+    @staticmethod
+    def compare_regional_vs_network_prices(network_df: pl.DataFrame, regional_df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        """
+        Сравнивает цены между региональными данными и сетевыми данными
+        
+        Args:
+            network_df: DataFrame с данными сетей
+            regional_df: DataFrame с региональными данными
+            
+        Returns:
+            DataFrame со сравнением цен
+        """
+        try:
+            # Вычисляем средние цены по типам топлива для сетей
+            network_avg = network_df.group_by("fuel_type").agg([
+                pl.col("price").mean().alias("network_avg_price"),
+                pl.count().alias("network_records")
+            ])
+            
+            # Вычисляем средние цены по типам топлива для регионов
+            regional_avg = regional_df.group_by("fuel_type").agg([
+                pl.col("price").mean().alias("regional_avg_price"),
+                pl.count().alias("regional_records")
+            ])
+            
+            # Объединяем данные для сравнения
+            comparison = network_avg.join(regional_avg, on="fuel_type", how="outer")
+            
+            # Вычисляем разницу
+            comparison = comparison.with_columns([
+                (pl.col("network_avg_price") - pl.col("regional_avg_price")).alias("price_difference"),
+                ((pl.col("network_avg_price") - pl.col("regional_avg_price")) / pl.col("regional_avg_price") * 100).alias("percentage_difference")
+            ]).sort("fuel_type")
+            
+            return comparison
+            
+        except Exception as e:
+            logger.error(f"Ошибка сравнения региональных и сетевых цен: {e}")
+            return None
 
 
 class DataValidator:
