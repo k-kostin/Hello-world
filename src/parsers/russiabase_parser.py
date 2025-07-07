@@ -32,12 +32,12 @@ class RussiaBaseRegionalParser:
     
     # Маппинг названий топлива на сайте к стандартным названиям
     FUEL_TYPE_MAPPING = {
-        'АИ-92': ['ai-92', 'аи-92', 'аи 92', '92', 'ai92', 'АИ-92'],
-        'АИ-95': ['ai-95', 'аи-95', 'аи 95', '95', 'ai95', 'АИ-95'],
-        'АИ-98': ['ai-98', 'аи-98', 'аи 98', '98', 'ai98', 'АИ-98'],
-        'АИ-100': ['ai-100', 'аи-100', 'аи 100', '100', 'ai100', 'АИ-100'],
-        'Дизель': ['дизель', 'диз', 'dt', 'дт', 'diesel', 'дизельное'],
-        'Газ': ['газ', 'lpg', 'gas', 'суг', 'пропан']
+        'АИ-92': ['ai-92', 'аи-92', 'аи 92', '92', 'ai92', 'АИ-92', 'ай-92', 'ай 92', 'Аи-92+', 'аи92'],
+        'АИ-95': ['ai-95', 'аи-95', 'аи 95', '95', 'ai95', 'АИ-95', 'ай-95', 'ай 95', 'Аи-95+', 'аи95'],
+        'АИ-98': ['ai-98', 'аи-98', 'аи 98', '98', 'ai98', 'АИ-98', 'ай-98', 'ай 98', 'аи98'],
+        'АИ-100': ['ai-100', 'аи-100', 'аи 100', '100', 'ai100', 'АИ-100', 'ай-100', 'ай 100', 'аи100'],
+        'ДТ': ['дизель', 'диз', 'dt', 'дт', 'diesel', 'дизельное', 'ДТ', 'солярка', 'дизтопливо'],
+        'Пропан': ['газ', 'lpg', 'gas', 'суг', 'пропан', 'Пропан', 'сжиженный газ', 'автогаз']
     }
     
     def __init__(self, delay: float = 1.0):
@@ -366,11 +366,178 @@ class RussiaBaseRegionalParser:
         return prices
     
     def _extract_from_tables(self, soup: BeautifulSoup) -> Dict[str, float]:
-        """Извлекает цены из таблиц"""
+        """Извлекает цены из таблиц с использованием специфичных селекторов для russiabase.ru"""
         prices = {}
         
         try:
-            # Ищем таблицы с ценами
+            # Стратегия 1: Специальные селекторы для russiabase.ru
+            russiabase_prices = self._extract_from_russiabase_table(soup)
+            if russiabase_prices:
+                prices.update(russiabase_prices)
+                self.logger.info(f"Извлечены цены через специальные селекторы russiabase.ru: {russiabase_prices}")
+            
+            # Стратегия 2: Общий поиск по таблицам (если первый способ не сработал)
+            if not prices:
+                general_prices = self._extract_from_general_tables(soup)
+                if general_prices:
+                    prices.update(general_prices)
+                    self.logger.info(f"Извлечены цены через общий поиск по таблицам: {general_prices}")
+                    
+        except Exception as e:
+            self.logger.debug(f"Ошибка извлечения из таблиц: {e}")
+        
+        return prices
+
+    def _extract_from_russiabase_table(self, soup: BeautifulSoup) -> Dict[str, float]:
+        """
+        Извлекает цены из специфичной таблицы russiabase.ru
+        
+        Использует селекторы:
+        - Таблица: div#__next main.mainPaddingTop div.OrgListing_listingContainer__TjFmQ 
+                   div.OrgListing_listing__ieCof section.Table_table__QTCkj 
+                   div.Table_tableWrapper__oUpPQ table.Table_tableInnerWrapper__AGg3H
+        - Заголовки: thead tr th
+        - Ячейки с ценами: tbody tr td.Table_column__20dGl
+        """
+        prices = {}
+        
+        try:
+            # Ищем основную таблицу с ценами по селектору
+            main_table = soup.select_one('div#__next main.mainPaddingTop div.OrgListing_listingContainer__TjFmQ div.OrgListing_listing__ieCof section.Table_table__QTCkj div.Table_tableWrapper__oUpPQ table.Table_tableInnerWrapper__AGg3H')
+            
+            if not main_table:
+                # Пробуем более короткие селекторы
+                main_table = soup.select_one('section.Table_table__QTCkj table.Table_tableInnerWrapper__AGg3H')
+                
+            if not main_table:
+                # Пробуем найти по классам таблицы
+                main_table = soup.select_one('table.Table_tableInnerWrapper__AGg3H')
+                
+            if not main_table:
+                self.logger.debug("Не найдена основная таблица russiabase.ru")
+                return prices
+                
+            self.logger.debug("Найдена основная таблица russiabase.ru")
+            
+            # Извлекаем заголовки таблицы (названия видов топлива)
+            headers = main_table.select('thead tr th')
+            fuel_types = []
+            
+            for header in headers:
+                header_text = header.get_text().strip()
+                if header_text:
+                    fuel_types.append(header_text)
+                    
+            self.logger.debug(f"Найдены заголовки таблицы: {fuel_types}")
+            
+            # Если нет заголовков, пробуем найти их в первой строке
+            if not fuel_types:
+                first_row = main_table.select_one('tbody tr')
+                if first_row:
+                    cells = first_row.select('td.Table_column__20dGl')
+                    for i, cell in enumerate(cells):
+                        cell_text = cell.get_text().strip()
+                        # Проверяем, похож ли текст на название топлива
+                        if self._normalize_fuel_name(cell_text):
+                            fuel_types.append(cell_text)
+            
+            # Извлекаем средние цены
+            prices_row = None
+            rows = main_table.select('tbody tr')
+            
+            for row in rows:
+                cells = row.select('td.Table_column__20dGl')
+                if cells:
+                    # Ищем строку со средними ценами или первую строку с числами
+                    first_cell_text = cells[0].get_text().strip().lower()
+                    
+                    # Если это строка со средними ценами
+                    if 'средн' in first_cell_text or 'average' in first_cell_text:
+                        prices_row = row
+                        break
+                    
+                    # Или если первая ячейка содержит цену
+                    if self._extract_price_from_text(first_cell_text):
+                        prices_row = row
+                        break
+            
+            # Если не нашли специальную строку, берем первую строку с данными
+            if not prices_row and rows:
+                prices_row = rows[0]
+                
+            if prices_row:
+                price_cells = prices_row.select('td.Table_column__20dGl')
+                self.logger.debug(f"Найдена строка с ценами, ячеек: {len(price_cells)}")
+                
+                # Сопоставляем заголовки с ценами
+                for i, cell in enumerate(price_cells):
+                    price_text = cell.get_text().strip()
+                    price = self._extract_price_from_text(price_text)
+                    
+                    if price:
+                        # Определяем тип топлива
+                        fuel_type = None
+                        
+                        # Если есть заголовки, используем их
+                        if i < len(fuel_types):
+                            fuel_type = self._normalize_fuel_name(fuel_types[i])
+                        
+                        # Если заголовок не распознан, пробуем по позиции
+                        if not fuel_type:
+                            # Типичный порядок: АИ-92, АИ-95, АИ-98, АИ-100, Дизель, Газ
+                            position_mapping = {
+                                0: 'АИ-92',
+                                1: 'АИ-95', 
+                                2: 'АИ-98',
+                                3: 'АИ-100',
+                                4: 'Дизель',
+                                5: 'Газ'
+                            }
+                            fuel_type = position_mapping.get(i)
+                        
+                        if fuel_type:
+                            prices[fuel_type] = price
+                            self.logger.debug(f"Найдена цена: {fuel_type} = {price}")
+                            
+            # Дополнительная проверка: поиск по всем ячейкам с классом Table_column__20dGl
+            if not prices:
+                all_cells = main_table.select('td.Table_column__20dGl')
+                self.logger.debug(f"Дополнительный поиск в {len(all_cells)} ячейках")
+                
+                for cell in all_cells:
+                    cell_text = cell.get_text().strip()
+                    
+                    # Проверяем, является ли ячейка заголовком топлива
+                    fuel_type = self._normalize_fuel_name(cell_text)
+                    if fuel_type:
+                        # Ищем соседние ячейки с ценами
+                        next_cell = cell.find_next_sibling('td')
+                        if next_cell:
+                            price = self._extract_price_from_text(next_cell.get_text().strip())
+                            if price:
+                                prices[fuel_type] = price
+                    
+                    # Или проверяем, является ли ячейка ценой
+                    price = self._extract_price_from_text(cell_text)
+                    if price:
+                        # Ищем предыдущую ячейку с названием топлива
+                        prev_cell = cell.find_previous_sibling('td')
+                        if prev_cell:
+                            fuel_type = self._normalize_fuel_name(prev_cell.get_text().strip())
+                            if fuel_type:
+                                prices[fuel_type] = price
+                                
+        except Exception as e:
+            self.logger.debug(f"Ошибка извлечения из таблицы russiabase.ru: {e}")
+        
+        return prices
+
+    def _extract_from_general_tables(self, soup: BeautifulSoup) -> Dict[str, float]:
+        """Общий метод извлечения цен из таблиц"""
+        prices = {}
+        
+        try:
+            # Ищем все таблицы на странице
             tables = soup.find_all('table')
             
             for table in tables:
@@ -391,7 +558,7 @@ class RussiaBaseRegionalParser:
                                     prices[normalized_fuel] = price
                                     
         except Exception as e:
-            self.logger.debug(f"Ошибка извлечения из таблиц: {e}")
+            self.logger.debug(f"Ошибка общего извлечения из таблиц: {e}")
         
         return prices
     
@@ -487,12 +654,36 @@ class RussiaBaseRegionalParser:
         if not fuel_text:
             return None
             
-        fuel_text = fuel_text.lower().strip()
+        # Очищаем текст от лишних символов
+        fuel_text = re.sub(r'[^\w\-\+]', '', fuel_text.lower().strip())
         
+        # Проверяем точные совпадения
         for standard_name, variants in self.FUEL_TYPE_MAPPING.items():
             for variant in variants:
-                if variant.lower() in fuel_text:
+                variant_clean = re.sub(r'[^\w\-\+]', '', variant.lower())
+                if variant_clean == fuel_text:
                     return standard_name
+        
+        # Проверяем частичные совпадения
+        for standard_name, variants in self.FUEL_TYPE_MAPPING.items():
+            for variant in variants:
+                variant_clean = re.sub(r'[^\w\-\+]', '', variant.lower())
+                if variant_clean in fuel_text or fuel_text in variant_clean:
+                    return standard_name
+        
+        # Дополнительные проверки для конкретных паттернов
+        if re.search(r'92', fuel_text):
+            return 'АИ-92'
+        elif re.search(r'95', fuel_text):
+            return 'АИ-95'
+        elif re.search(r'98', fuel_text):
+            return 'АИ-98'
+        elif re.search(r'100', fuel_text):
+            return 'АИ-100'
+        elif re.search(r'(дт|диз|diesel)', fuel_text):
+            return 'ДТ'
+        elif re.search(r'(газ|lpg|пропан)', fuel_text):
+            return 'Пропан'
         
         return None
     
