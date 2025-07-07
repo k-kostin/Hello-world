@@ -4,6 +4,7 @@
 import requests
 import re
 import time
+import json
 import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ class RussiaBaseRegionalParser:
     Улучшенный парсер региональных цен на топливо с сайта russiabase.ru
     
     Извлекает актуальные цены на различные виды топлива для регионов России.
+    Поддерживает автоматическое получение полной карты регионов из JSON структуры.
     """
     
     BASE_URL = "https://russiabase.ru/prices"
@@ -51,7 +53,180 @@ class RussiaBaseRegionalParser:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
         self.logger = logging.getLogger(__name__)
+        self._regions_cache = None  # Кэш для карты регионов
         
+    def extract_regions_from_json(self, region_id: Optional[int] = None) -> Dict[int, str]:
+        """
+        Извлекает полную карту регионов из JSON структуры в HTML коде страницы
+        
+        Пример JSON структуры в HTML:
+        "regions":[{"id":"18","value":"Алтайский край"},{"id":"72","value":"Амурская область"}...]
+        
+        Args:
+            region_id: ID региона для запроса (по умолчанию 78 - Камчатский край)
+            
+        Returns:
+            Словарь {region_id: region_name} со всеми регионами
+        """
+        if self._regions_cache:
+            return self._regions_cache
+            
+        if region_id is None:
+            region_id = 78  # Камчатский край как дефолтный регион
+            
+        url = f"{self.BASE_URL}?region={region_id}"
+        
+        try:
+            self.logger.info("Извлекаю полную карту регионов из JSON структуры...")
+            
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            
+            # Ищем JSON структуру с регионами в HTML коде
+            regions_data = self._extract_json_from_html(response.text)
+            
+            if regions_data:
+                self._regions_cache = regions_data
+                self.logger.info(f"Успешно извлечено {len(regions_data)} регионов из JSON структуры")
+                return regions_data
+            else:
+                self.logger.warning("Не удалось найти JSON структуру с регионами")
+                return {}
+                
+        except Exception as e:
+            self.logger.error(f"Ошибка при извлечении карты регионов: {e}")
+            return {}
+    
+    def _extract_json_from_html(self, html_content: str) -> Dict[int, str]:
+        """
+        Извлекает JSON данные с регионами из HTML контента
+        
+        Args:
+            html_content: HTML содержимое страницы
+            
+        Returns:
+            Словарь {region_id: region_name}
+        """
+        regions = {}
+        
+        try:
+            # Паттерны для поиска JSON структуры с регионами
+            json_patterns = [
+                r'"regions"\s*:\s*(\[.*?\])',
+                r'regions\s*:\s*(\[.*?\])',
+                r'window\.__NEXT_DATA__\s*=\s*({.*?});',
+                r'window\.__INITIAL_STATE__\s*=\s*({.*?});'
+            ]
+            
+            for pattern in json_patterns:
+                matches = re.finditer(pattern, html_content, re.DOTALL)
+                
+                for match in matches:
+                    try:
+                        json_str = match.group(1)
+                        
+                        # Если это полный объект, ищем regions внутри
+                        if json_str.startswith('{'):
+                            data = json.loads(json_str)
+                            regions_list = self._find_regions_in_object(data)
+                        else:
+                            # Если это массив регионов
+                            regions_list = json.loads(json_str)
+                        
+                        if regions_list and isinstance(regions_list, list):
+                            for region in regions_list:
+                                if isinstance(region, dict) and 'id' in region:
+                                    region_id = int(region['id'])
+                                    region_name = region.get('value', region.get('name', f'Регион {region_id}'))
+                                    regions[region_id] = region_name
+                            
+                            if regions:
+                                self.logger.info(f"Найдено {len(regions)} регионов в JSON структуре")
+                                return regions
+                                
+                    except (json.JSONDecodeError, ValueError, KeyError) as e:
+                        self.logger.debug(f"Ошибка парсинга JSON для паттерна {pattern}: {e}")
+                        continue
+                        
+        except Exception as e:
+            self.logger.error(f"Общая ошибка извлечения JSON: {e}")
+        
+        return regions
+    
+    def _find_regions_in_object(self, data: Any) -> Optional[List]:
+        """
+        Рекурсивно ищет массив регионов в JSON объекте
+        
+        Args:
+            data: JSON объект для поиска
+            
+        Returns:
+            Список регионов или None
+        """
+        if isinstance(data, dict):
+            # Ищем ключ 'regions'
+            if 'regions' in data:
+                return data['regions']
+            
+            # Рекурсивно ищем в вложенных объектах
+            for key, value in data.items():
+                result = self._find_regions_in_object(value)
+                if result:
+                    return result
+                    
+        elif isinstance(data, list):
+            # Проверяем, не является ли этот список списком регионов
+            if data and isinstance(data[0], dict) and 'id' in data[0] and 'value' in data[0]:
+                return data
+                
+            # Рекурсивно ищем в элементах списка
+            for item in data:
+                result = self._find_regions_in_object(item)
+                if result:
+                    return result
+        
+        return None
+    
+    def get_all_regions(self) -> Dict[int, str]:
+        """
+        Возвращает полный список всех доступных регионов
+        
+        Returns:
+            Словарь {region_id: region_name}
+        """
+        return self.extract_regions_from_json()
+    
+    def parse_all_regions(self, max_regions: Optional[int] = None) -> List[PriceData]:
+        """
+        Парсит цены для всех доступных регионов
+        
+        Args:
+            max_regions: Максимальное количество регионов для парсинга (None = все)
+            
+        Returns:
+            Список объектов PriceData
+        """
+        all_regions = self.get_all_regions()
+        
+        if not all_regions:
+            self.logger.error("Не удалось получить список регионов")
+            return []
+        
+        self.logger.info(f"Найдено {len(all_regions)} регионов для парсинга")
+        
+        # Конвертируем в формат для parse_multiple_regions
+        regions_list = [
+            {'id': region_id, 'name': region_name}
+            for region_id, region_name in all_regions.items()
+        ]
+        
+        # Ограничиваем количество регионов если задано
+        if max_regions:
+            regions_list = regions_list[:max_regions]
+            self.logger.info(f"Ограничиваем парсинг до {max_regions} регионов")
+        
+        return self.parse_multiple_regions(regions_list)
+    
     def get_region_prices(self, region_id: int, region_name: str) -> Optional[PriceData]:
         """
         Получает цены на топливо для конкретного региона
