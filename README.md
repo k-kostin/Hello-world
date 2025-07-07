@@ -61,17 +61,17 @@
 
 #### Вариант 1: Простой запуск (все регионы)
 ```bash
-python regional_parser_final.py --all-regions
+python regional_parser.py --all-regions
 ```
 
 #### Вариант 2: Популярные регионы
 ```bash
-python regional_parser_final.py --popular-regions
+python regional_parser.py --popular-regions
 ```
 
 #### Вариант 3: Конкретные регионы
 ```bash
-python regional_parser_final.py --regions 77 78 50  # Москва, СПб, Московская область
+python regional_parser.py --regions 77 78 50  # Москва, СПб, Московская область
 ```
 
 #### Вариант 4: Через основной интерфейс
@@ -83,27 +83,27 @@ python main.py --networks regional_prices
 
 #### Показать все доступные регионы
 ```bash
-python regional_parser_final.py --list-regions
+python regional_parser.py --list-regions
 ```
 
 #### Ограничить количество регионов
 ```bash
-python regional_parser_final.py --all-regions --max-regions 10
+python regional_parser.py --all-regions --max-regions 10
 ```
 
 #### Настроить задержку между запросами
 ```bash
-python regional_parser_final.py --popular-regions --delay 2.0
+python regional_parser.py --popular-regions --delay 2.0
 ```
 
 #### Подробное логирование
 ```bash
-python regional_parser_final.py --all-regions --verbose
+python regional_parser.py --all-regions --verbose
 ```
 
 #### Интегрированный режим (через оркестратор)
 ```bash
-python regional_parser_final.py --popular-regions --use-orchestrator
+python regional_parser.py --popular-regions --use-orchestrator
 ```
 
 ### 💡 Примеры использования в коде
@@ -320,13 +320,13 @@ python main.py --networks lukoil gazprom
 
 ```bash
 # Все регионы России (84 региона)
-python regional_parser_final.py --all-regions
+python regional_parser.py --all-regions
 
 # Популярные регионы (Москва, СПб, МО и др.)
-python regional_parser_final.py --popular-regions
+python regional_parser.py --popular-regions
 
 # Конкретные регионы
-python regional_parser_final.py --regions 77 78 50
+python regional_parser.py --regions 77 78 50
 
 # Через основной интерфейс
 python main.py --networks regional_prices
@@ -342,7 +342,7 @@ python main.py --networks lukoil bashneft --parallel --workers 2
 
 ```bash
 python main.py --all --verbose
-python regional_parser_final.py --all-regions --verbose
+python regional_parser.py --all-regions --verbose
 ```
 
 ## 📊 Структура выходных данных
@@ -599,19 +599,19 @@ python main.py --networks lukoil --workers 1
 
 ```bash
 # Все 84 региона России
-python regional_parser_final.py --all-regions
+python regional_parser.py --all-regions
 
 # Популярные регионы (Москва, СПб, МО и др.)
-python regional_parser_final.py --popular-regions
+python regional_parser.py --popular-regions
 
 # Конкретные регионы (Москва=77, СПб=78, МО=50)
-python regional_parser_final.py --regions 77 78 50
+python regional_parser.py --regions 77 78 50
 
 # Через основной интерфейс
 python main.py --networks regional_prices
 
 # Показать все доступные регионы
-python regional_parser_final.py --list-regions
+python regional_parser.py --list-regions
 ```
 
 **📊 Результат:** Средние цены на топливо (АИ-92, АИ-95, АИ-98, ДТ, Пропан) по каждому региону России.

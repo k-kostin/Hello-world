@@ -45,7 +45,7 @@
 ### 🌍 Парсинг всех регионов России (84 региона)
 
 ```bash
-python regional_parser_final.py --all-regions
+python regional_parser.py --all-regions
 ```
 
 **Результат:**
@@ -57,7 +57,7 @@ python regional_parser_final.py --all-regions
 ### ⭐ Парсинг популярных регионов
 
 ```bash
-python regional_parser_final.py --popular-regions
+python regional_parser.py --popular-regions
 ```
 
 **Популярные регионы (по умолчанию):**
@@ -72,10 +72,10 @@ python regional_parser_final.py --popular-regions
 
 ```bash
 # Москва, СПб и Московская область
-python regional_parser_final.py --regions 77 78 50
+python regional_parser.py --regions 77 78 50
 
 # Только Москва
-python regional_parser_final.py --regions 77
+python regional_parser.py --regions 77
 ```
 
 ### 🔗 Через основной интерфейс
@@ -91,7 +91,7 @@ python main.py --networks regional_prices
 ### 🗺️ Просмотр всех доступных регионов
 
 ```bash
-python regional_parser_final.py --list-regions
+python regional_parser.py --list-regions
 ```
 
 **Пример вывода:**
@@ -113,29 +113,29 @@ python regional_parser_final.py --list-regions
 #### Ограничение количества регионов
 ```bash
 # Парсить только первые 10 регионов
-python regional_parser_final.py --all-regions --max-regions 10
+python regional_parser.py --all-regions --max-regions 10
 
 # Ограничить популярные регионы до 3
-python regional_parser_final.py --popular-regions --max-regions 3
+python regional_parser.py --popular-regions --max-regions 3
 ```
 
 #### Настройка задержки между запросами
 ```bash
 # Задержка 2 секунды (бережнее к серверу)
-python regional_parser_final.py --popular-regions --delay 2.0
+python regional_parser.py --popular-regions --delay 2.0
 
 # Быстрый режим (1 секунда)
-python regional_parser_final.py --popular-regions --delay 1.0
+python regional_parser.py --popular-regions --delay 1.0
 ```
 
 #### Подробное логирование
 ```bash
-python regional_parser_final.py --all-regions --verbose
+python regional_parser.py --all-regions --verbose
 ```
 
 #### Интегрированный режим (через оркестратор)
 ```bash
-python regional_parser_final.py --popular-regions --use-orchestrator
+python regional_parser.py --popular-regions --use-orchestrator
 ```
 
 ---
@@ -779,7 +779,7 @@ ConnectionError: HTTPSConnectionPool(host='russiabase.ru', port=443)
 **Решения:**
 ```bash
 # Увеличить таймаут
-python regional_parser_final.py --popular-regions --delay 3.0
+python regional_parser.py --popular-regions --delay 3.0
 
 # Проверить интернет-соединение
 ping russiabase.ru
@@ -823,13 +823,13 @@ if test_result.error_message:
 **Оптимизация:**
 ```bash
 # Уменьшить задержку (осторожно!)
-python regional_parser_final.py --popular-regions --delay 1.0
+python regional_parser.py --popular-regions --delay 1.0
 
 # Ограничить количество регионов
-python regional_parser_final.py --all-regions --max-regions 20
+python regional_parser.py --all-regions --max-regions 20
 
 # Использовать популярные регионы вместо всех
-python regional_parser_final.py --popular-regions
+python regional_parser.py --popular-regions
 ```
 
 ### 🔍 Отладка
@@ -837,7 +837,7 @@ python regional_parser_final.py --popular-regions
 #### Включение подробного логирования
 
 ```bash
-python regional_parser_final.py --popular-regions --verbose
+python regional_parser.py --popular-regions --verbose
 ```
 
 #### Программная отладка
