@@ -86,7 +86,9 @@ class GasStationOrchestrator:
     def _save_network_data(self, network_name: str, df: pl.DataFrame):
         """Сохраняет данные сети в файл"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{network_name}_{timestamp}.xlsx"
+        # Очищаем название сети для использования в имени файла
+        clean_network_name = "".join(c for c in network_name if c.isalnum() or c in "-_")
+        filename = f"{clean_network_name}_{timestamp}.xlsx"
         filepath = os.path.join(OUTPUT_DIR, filename)
         
         try:
@@ -113,7 +115,12 @@ class GasStationOrchestrator:
             # Если сетей мало (до 3), добавляем их названия в имя файла
             successful_networks = list(self.results.keys())
             if len(successful_networks) <= 3:
-                networks_suffix = "_".join(successful_networks)
+                # Очищаем названия сетей от символов, не подходящих для имен файлов
+                clean_networks = []
+                for network in successful_networks:
+                    clean_name = "".join(c for c in network if c.isalnum() or c in "-_")
+                    clean_networks.append(clean_name)
+                networks_suffix = "_".join(clean_networks)
                 filename = f"gas_stations_{networks_suffix}_{timestamp}.xlsx"
             else:
                 filename = f"gas_stations_{timestamp}.xlsx"
@@ -214,19 +221,24 @@ class GasStationOrchestrator:
         duration = end_time - start_time
         
         # Объединяем все результаты
+        combined_df = None
+        total_records = 0
+        
         if self.results:
             try:
                 combined_df = pl.concat(list(self.results.values()), how="vertical")
                 self._save_combined_data(combined_df)
+                total_records = len(combined_df)
             except Exception as e:
                 logger.warning(f"Ошибка при объединении данных: {e}")
                 logger.info("Сохраняем данные каждой сети отдельно")
-                # В случае ошибки объединения, продолжаем с отдельными файлами
+                # В случае ошибки объединения, вычисляем общее количество записей
+                total_records = sum(len(df) for df in self.results.values())
             
             logger.info(f"Парсинг завершен за {duration}")
             logger.info(f"Успешно обработано сетей: {len(self.results)}")
             logger.info(f"Ошибок: {len(self.errors)}")
-            logger.info(f"Общее количество записей: {len(combined_df)}")
+            logger.info(f"Общее количество записей: {total_records}")
             
             if self.errors:
                 logger.warning(f"Ошибки по сетям: {self.errors}")

@@ -35,8 +35,20 @@ class DataProcessor:
             logger.error("Файлы с данными не найдены")
             return None
         
-        # Сортируем по дате в названии файла
-        files.sort(reverse=True)
+        # Сортируем по дате в названии файла (извлекаем timestamp для корректной сортировки)
+        def extract_timestamp(filename):
+            try:
+                parts = filename.split("_")
+                if filename.startswith("all_gas_stations_"):
+                    return parts[3] + "_" + parts[4].split(".")[0]
+                elif filename.startswith("gas_stations_") and len(parts) >= 4:
+                    return parts[-2] + "_" + parts[-1].split(".")[0]
+                else:
+                    return "19700101_000000"  # fallback for unknown format
+            except Exception:
+                return "19700101_000000"  # fallback
+        
+        files.sort(key=extract_timestamp, reverse=True)
         latest_file = files[0]
         
         filepath = os.path.join(data_dir, latest_file)
@@ -204,7 +216,20 @@ class DataProcessor:
             logger.warning("Недостаточно исторических данных для анализа трендов")
             return None
         
-        files.sort()  # Сортируем по дате
+        # Сортируем по дате извлеченной из имени файла (хронологически)
+        def extract_timestamp_for_trends(filename):
+            try:
+                parts = filename.split("_")
+                if filename.startswith("all_gas_stations_"):
+                    return parts[3] + "_" + parts[4].split(".")[0]
+                elif filename.startswith("gas_stations_") and len(parts) >= 4:
+                    return parts[-2] + "_" + parts[-1].split(".")[0]
+                else:
+                    return "19700101_000000"  # fallback
+            except Exception:
+                return "19700101_000000"  # fallback
+        
+        files.sort(key=extract_timestamp_for_trends)  # Сортируем по дате (от старых к новым)
         
         trends_data = []
         
@@ -212,15 +237,19 @@ class DataProcessor:
             try:
                 # Извлекаем дату из названия файла (поддерживаем разные форматы)
                 parts = file.split("_")
-                if file.startswith("all_gas_stations_"):
+                date_str = None
+                
+                if file.startswith("all_gas_stations_") and len(parts) >= 5:
                     # Формат: all_gas_stations_YYYYMMDD_HHMMSS.xlsx
                     date_str = parts[3] + "_" + parts[4].split(".")[0]
                 elif file.startswith("gas_stations_") and len(parts) >= 4:
                     # Формат: gas_stations_[networks_]YYYYMMDD_HHMMSS.xlsx
                     # Последние два элемента всегда дата и время
                     date_str = parts[-2] + "_" + parts[-1].split(".")[0]
-                else:
-                    continue  # Пропускаем файлы с неподдерживаемым форматом
+                
+                if not date_str:
+                    logger.warning(f"Не удалось извлечь дату из файла: {file}")
+                    continue
                 
                 file_date = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
                 
