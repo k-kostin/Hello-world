@@ -113,6 +113,11 @@ class TatneftParser(BaseParser):
         longitude = station.get("lon") or station.get("longitude")
         number = station.get("number")
 
+        # Фильтруем станции из Беларуси
+        if region == "Республика Беларусь":
+            logger.debug(f"Пропускаем станцию {station_id} из Беларуси")
+            return []
+
         # Формируем адрес если он пустой
         if not address and region:
             address = region
