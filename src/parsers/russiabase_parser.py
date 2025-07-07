@@ -393,3 +393,236 @@ class RussiaBaseRegionalParser:
     def get_available_fuel_types(self) -> List[str]:
         """Возвращает список доступных типов топлива"""
         return list(self.FUEL_TYPE_MAPPING.keys())
+
+    def _extract_region_name(self, html_content: str, region_id: int) -> str:
+        """
+        Извлекает правильное название региона со страницы russiabase.ru
+        
+        Args:
+            html_content: HTML содержимое страницы
+            region_id: ID региона
+            
+        Returns:
+            str: Корректное название региона
+        """
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Стратегия 1: Извлечение из title
+            title = soup.find('title')
+            if title:
+                title_text = title.get_text().strip()
+                if ' в ' in title_text:
+                    region_name = title_text.split(' в ')[-1].strip()
+                    # Убираем падежные окончания
+                    region_name = self._normalize_region_name(region_name)
+                    if region_name:
+                        return region_name
+            
+            # Стратегия 2: Извлечение из H1
+            h1 = soup.find('h1')
+            if h1:
+                h1_text = h1.get_text().strip()
+                if ' в ' in h1_text:
+                    region_name = h1_text.split(' в ')[-1].strip()
+                    region_name = self._normalize_region_name(region_name)
+                    if region_name:
+                        return region_name
+            
+            # Стратегия 3: Поиск в мета-описании
+            try:
+                meta_desc = soup.find('meta', attrs={'name': 'description'})
+                if meta_desc:
+                    content = meta_desc.get('content', '')
+                    if content and ' в ' in content:
+                        region_name = content.split(' в ')[-1].split('.')[0].strip()
+                        region_name = self._normalize_region_name(region_name)
+                        if region_name:
+                            return region_name
+            except (AttributeError, TypeError):
+                pass
+            
+            # Если не удалось извлечь, возвращаем базовое название
+            return f"Регион {region_id}"
+            
+        except Exception as e:
+            self.logger.warning(f"Ошибка извлечения названия региона {region_id}: {e}")
+            return f"Регион {region_id}"
+    
+    def _normalize_region_name(self, region_name: str) -> str:
+        """
+        Нормализует название региона (убирает падежные окончания)
+        
+        Args:
+            region_name: Исходное название региона
+            
+        Returns:
+            str: Нормализованное название
+        """
+        if not region_name:
+            return ""
+        
+        # Убираем лишние пробелы
+        region_name = region_name.strip()
+        
+        # Словарь для замены падежных форм на именительный падеж
+        replacements = {
+            # Области в родительном падеже -> именительный падеж
+            'Тверской области': 'Тверская область',
+            'Калининградской области': 'Калининградская область',
+            'Псковской области': 'Псковская область',
+            'Ленинградской области': 'Ленинградская область',
+            'Курской области': 'Курская область',
+            'Тюменской области': 'Тюменская область',
+            'Оренбургской области': 'Оренбургская область',
+            'Тульской области': 'Тульская область',
+            'Тамбовской области': 'Тамбовская область',
+            'Московской области': 'Московская область',
+            'Нижегородской области': 'Нижегородская область',
+            'Саратовской области': 'Саратовская область',
+            'Самарской области': 'Самарская область',
+            'Волгоградской области': 'Волгоградская область',
+            'Ростовской области': 'Ростовская область',
+            'Свердловской области': 'Свердловская область',
+            'Челябинской области': 'Челябинская область',
+            'Новосибирской области': 'Новосибирская область',
+            'Кемеровской области': 'Кемеровская область',
+            'Иркутской области': 'Иркутская область',
+            'Амурской области': 'Амурская область',
+            'Магаданской области': 'Магаданская область',
+            'Сахалинской области': 'Сахалинская область',
+            
+            # Республики
+            'Карелии': 'Республика Карелия',
+            'Удмуртии': 'Удмуртская Республика',
+            'Мордовии': 'Республика Мордовия',
+            'Башкортостане': 'Республика Башкортостан',
+            'Татарстане': 'Республика Татарстан',
+            'Чувашии': 'Чувашская Республика',
+            'Марий Эл': 'Республика Марий Эл',
+            'Коми': 'Республика Коми',
+            'Дагестане': 'Республика Дагестан',
+            'Ингушетии': 'Республика Ингушетия',
+            'Северной Осетии': 'Республика Северная Осетия',
+            'Кабардино-Балкарии': 'Кабардино-Балкарская Республика',
+            'Карачаево-Черкесии': 'Карачаево-Черкесская Республика',
+            'Адыгее': 'Республика Адыгея',
+            'Калмыкии': 'Республика Калмыкия',
+            'Крыму': 'Республика Крым',
+            'Алтае': 'Республика Алтай',
+            'Тыве': 'Республика Тыва',
+            'Хакасии': 'Республика Хакасия',
+            'Бурятии': 'Республика Бурятия',
+            'Саха (Якутии)': 'Республика Саха (Якутия)',
+            'Якутии': 'Республика Саха (Якутия)',
+            
+            # Края
+            'Краснодарском крае': 'Краснодарский край',
+            'Ставропольском крае': 'Ставропольский край',
+            'Алтайском крае': 'Алтайский край',
+            'Красноярском крае': 'Красноярский край',
+            'Приморском крае': 'Приморский край',
+            'Хабаровском крае': 'Хабаровский край',
+            'Камчатском крае': 'Камчатский край',
+            'Пермском крае': 'Пермский край',
+            'Забайкальском крае': 'Забайкальский край',
+            
+            # Автономные округа
+            'Ямало-Ненецком округе': 'Ямало-Ненецкий автономный округ',
+            'Ханты-Мансийском округе': 'Ханты-Мансийский автономный округ',
+            'Чукотском округе': 'Чукотский автономный округ',
+            'Ненецком округе': 'Ненецкий автономный округ',
+            'Чукотке': 'Чукотский автономный округ',
+            'ХМАО': 'Ханты-Мансийский автономный округ',
+            'ЯНАО': 'Ямало-Ненецкий автономный округ',
+            
+            # Города федерального значения
+            'Москве': 'Москва',
+            'Санкт-Петербурге': 'Санкт-Петербург',
+            'Севастополе': 'Севастополь'
+        }
+        
+        # Применяем замены
+        for old_form, new_form in replacements.items():
+            if region_name == old_form:
+                return new_form
+        
+        # Если точного соответствия нет, пробуем паттерны
+        import re
+        
+        # Паттерн для областей: "Название + области" -> "Название + область"
+        oblast_pattern = r'^(.+?)ой области$'
+        match = re.match(oblast_pattern, region_name)
+        if match:
+            return f"{match.group(1)}ая область"
+        
+        # Паттерн для краев: "Название + крае" -> "Название + край"
+        krai_pattern = r'^(.+?)ском крае$'
+        match = re.match(krai_pattern, region_name)
+        if match:
+            return f"{match.group(1)}ский край"
+        
+        # Возвращаем как есть, если не удалось нормализовать
+        return region_name
+
+    def get_region_data(self, region_id: int) -> Optional[PriceData]:
+        """
+        Получает данные по конкретному региону
+        
+        Args:
+            region_id: ID региона
+            
+        Returns:
+            Optional[PriceData]: Данные по региону или None при ошибке
+        """
+        url = f"{self.BASE_URL}?region={region_id}"
+        self.logger.info(f"Получение данных для региона {region_id}: {url}")
+        
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            
+            html_content = response.text
+            
+            # Извлекаем правильное название региона
+            region_name = self._extract_region_name(html_content, region_id)
+            
+            # Извлекаем цены на топливо
+            fuel_prices = self._extract_prices_from_html(html_content)
+            
+            if fuel_prices:
+                self.logger.info(f"✅ Регион {region_id} ({region_name}): найдено {len(fuel_prices)} цен на топливо")
+                for fuel_type, price in fuel_prices.items():
+                    self.logger.info(f"   {fuel_type}: {price:.2f} ₽")
+            else:
+                self.logger.warning(f"⚠️ Регион {region_id} ({region_name}): цены на топливо не найдены")
+            
+            return PriceData(
+                region_id=region_id,
+                region_name=region_name,
+                fuel_prices=fuel_prices,
+                url=url,
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                status="success" if fuel_prices else "no_data"
+            )
+            
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Ошибка получения данных для региона {region_id}: {e}")
+            return PriceData(
+                region_id=region_id,
+                region_name=f"Регион {region_id}",
+                fuel_prices={},
+                url=url,
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                status="error"
+            )
+        except Exception as e:
+            self.logger.error(f"Неожиданная ошибка получения данных для региона {region_id}: {e}")
+            return PriceData(
+                region_id=region_id,
+                region_name=f"Регион {region_id}",
+                fuel_prices={},
+                url=url,
+                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                status="error"
+            )
