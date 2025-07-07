@@ -645,93 +645,125 @@ class RussiaBaseRegionalParser(BaseParser):
                 main_table = soup.select_one('table.Table_tableInnerWrapper__AGg3H')
                 
             if not main_table:
-                logger.debug("Не найдена основная таблица russiabase.ru")
+                # Пробуем просто найти любую таблицу
+                main_table = soup.select_one('table')
+                
+            if not main_table:
+                logger.debug("Не найдена таблица russiabase.ru")
                 return prices
                 
-            logger.debug("Найдена основная таблица russiabase.ru")
+            logger.debug("Найдена таблица для парсинга")
             
             # Извлекаем заголовки таблицы (названия видов топлива)
             headers = main_table.select('thead tr th')
             fuel_types = []
             
-            for header in headers:
+            for i, header in enumerate(headers):
                 header_text = header.get_text().strip()
+                logger.debug(f"Заголовок {i}: '{header_text}'")
                 if header_text:
                     fuel_types.append(header_text)
                     
             logger.debug(f"Найдены заголовки таблицы: {fuel_types}")
             
-            # Если нет заголовков, пробуем найти их в первой строке
-            if not fuel_types:
-                first_row = main_table.select_one('tbody tr')
-                if first_row:
-                    cells = first_row.select('td.Table_column__20dGl')
-                    for i, cell in enumerate(cells):
-                        cell_text = cell.get_text().strip()
-                        # Проверяем, похож ли текст на название топлива
-                        if self._normalize_fuel_name(cell_text):
-                            fuel_types.append(cell_text)
-            
-            # Извлекаем средние цены
-            prices_row = None
+            # Извлекаем все строки данных
             rows = main_table.select('tbody tr')
+            logger.debug(f"Найдено строк в таблице: {len(rows)}")
             
-            for row in rows:
-                cells = row.select('td.Table_column__20dGl')
-                if cells:
-                    # Ищем строку со средними ценами или первую строку с числами
-                    first_cell_text = cells[0].get_text().strip().lower()
+            for row_idx, row in enumerate(rows):
+                cells = row.select('td')
+                if not cells:
+                    continue
                     
-                    # Если это строка со средними ценами
-                    if 'средн' in first_cell_text or 'average' in first_cell_text:
-                        prices_row = row
-                        break
-                    
-                    # Или если первая ячейка содержит цену
-                    if self._extract_price_from_text(first_cell_text):
-                        prices_row = row
-                        break
-            
-            # Если не нашли специальную строку, берем первую строку с данными
-            if not prices_row and rows:
-                prices_row = rows[0]
+                logger.debug(f"Строка {row_idx}: найдено ячеек {len(cells)}")
                 
-            if prices_row:
-                price_cells = prices_row.select('td.Table_column__20dGl')
-                logger.debug(f"Найдена строка с ценами, ячеек: {len(price_cells)}")
+                # Выводим содержимое каждой ячейки для отладки
+                cell_texts = []
+                for i, cell in enumerate(cells):
+                    cell_text = cell.get_text().strip()
+                    cell_texts.append(cell_text)
+                    logger.debug(f"  Ячейка {i}: '{cell_text}'")
                 
-                # Сопоставляем заголовки с ценами
-                for i, cell in enumerate(price_cells):
-                    price_text = cell.get_text().strip()
-                    price = self._extract_price_from_text(price_text)
+                # Анализируем содержимое строки
+                # Если первая ячейка содержит "Средняя цена" или похожее, берем эту строку
+                first_cell = cell_texts[0].lower() if cell_texts else ""
+                
+                is_price_row = (
+                    'средн' in first_cell or 
+                    'average' in first_cell or
+                    'цена' in first_cell or
+                    any(re.search(r'\d+\.\d+', cell) for cell in cell_texts[1:])  # Есть числа с точкой в других ячейках
+                )
+                
+                if is_price_row:
+                    logger.debug(f"Обрабатываем строку {row_idx} как строку с ценами")
                     
-                    if price:
-                        # Определяем тип топлива
-                        fuel_type = None
+                    # Пропускаем первую ячейку (обычно название)
+                    for i, cell_text in enumerate(cell_texts[1:], 1):
+                        price = self._extract_price_from_text(cell_text)
                         
-                        # Если есть заголовки, используем их
-                        if i < len(fuel_types):
-                            fuel_type = self._normalize_fuel_name(fuel_types[i])
-                        
-                        # Если заголовок не распознан, пробуем по позиции
-                        if not fuel_type:
-                            # Типичный порядок: АИ-92, АИ-95, АИ-98, АИ-100, Дизель, Газ
-                            position_mapping = {
-                                0: 'АИ-92',
-                                1: 'АИ-95', 
-                                2: 'АИ-98',
-                                3: 'АИ-100',
-                                4: 'ДТ',
-                                5: 'Пропан'
-                            }
-                            fuel_type = position_mapping.get(i)
-                        
-                        if fuel_type:
-                            prices[fuel_type] = price
-                            logger.debug(f"Найдена цена: {fuel_type} = {price}")
+                        if price and price > 30:  # Реальные цены больше 30 рублей
+                            # Определяем тип топлива по позиции или заголовку
+                            fuel_type = None
                             
+                            # По заголовку
+                            if i < len(fuel_types):
+                                header_text = fuel_types[i]
+                                fuel_type = self._normalize_fuel_name(header_text)
+                                logger.debug(f"Заголовок '{header_text}' -> топливо: {fuel_type}")
+                            
+                            # По позиции если заголовок не распознался
+                            if not fuel_type:
+                                position_mapping = {
+                                    1: 'АИ-92',
+                                    2: 'АИ-95', 
+                                    3: 'АИ-98',
+                                    4: 'АИ-100',
+                                    5: 'ДТ',
+                                    6: 'Пропан'
+                                }
+                                fuel_type = position_mapping.get(i)
+                                logger.debug(f"По позиции {i} -> топливо: {fuel_type}")
+                            
+                            if fuel_type:
+                                prices[fuel_type] = price
+                                logger.debug(f"✅ Найдена реальная цена: {fuel_type} = {price}")
+                    
+                    # Если нашли хотя бы одну цену в этой строке, прекращаем поиск
+                    if prices:
+                        break
+            
+            # Если не нашли цены в таблице, пробуем альтернативный подход
+            if not prices:
+                logger.debug("Не найдены цены в основной таблице, пробуем альтернативный поиск")
+                
+                # Ищем любые ячейки с классами, указывающими на цены
+                price_cells = main_table.select('td[class*="price"], td[class*="cost"], td[class*="value"]')
+                for cell in price_cells:
+                    cell_text = cell.get_text().strip()
+                    price = self._extract_price_from_text(cell_text)
+                    if price and price > 30:
+                        logger.debug(f"Найдена цена в специальной ячейке: {price}")
+                        
+                        # Пытаемся определить тип топлива из соседних ячеек
+                        parent_row = cell.find_parent('tr')
+                        if parent_row:
+                            row_cells = parent_row.select('td')
+                            for row_cell in row_cells:
+                                fuel_type = self._normalize_fuel_name(row_cell.get_text().strip())
+                                if fuel_type:
+                                    prices[fuel_type] = price
+                                    logger.debug(f"✅ Определен тип: {fuel_type} = {price}")
+                                    break
+                                    
         except Exception as e:
-            logger.debug(f"Ошибка извлечения из таблицы russiabase.ru: {e}")
+            logger.error(f"Ошибка извлечения из таблицы russiabase.ru: {e}")
+        
+        # Дополнительная проверка - если цены слишком подозрительные (92, 95, 98, 100), очищаем
+        suspicious_prices = [92.0, 95.0, 98.0, 100.0]
+        if all(price in suspicious_prices for price in prices.values()):
+            logger.warning("⚠️ Обнаружены подозрительные цены (92, 95, 98, 100) - возможно, это номера топлива, а не цены")
+            prices.clear()
         
         return prices
 
@@ -740,26 +772,61 @@ class RussiaBaseRegionalParser(BaseParser):
         prices = {}
         
         try:
+            logger.debug("Запуск общего поиска по таблицам")
+            
             # Ищем все таблицы на странице
             tables = soup.find_all('table')
+            logger.debug(f"Найдено таблиц: {len(tables)}")
             
-            for table in tables:
+            for table_idx, table in enumerate(tables):
+                logger.debug(f"Анализируем таблицу {table_idx}")
                 rows = table.find_all('tr')
                 
-                for row in rows:
+                for row_idx, row in enumerate(rows):
                     cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 2:
-                        for i, cell in enumerate(cells[:-1]):
-                            fuel_text = cell.get_text().strip()
-                            price_text = cells[i + 1].get_text().strip()
-                            
-                            # Проверяем, содержит ли текст название топлива
-                            normalized_fuel = self._normalize_fuel_name(fuel_text)
-                            if normalized_fuel:
-                                price = self._extract_price_from_text(price_text)
-                                if price:
-                                    prices[normalized_fuel] = price
-                                    
+                    if len(cells) < 2:
+                        continue
+                    
+                    logger.debug(f"  Строка {row_idx}: {len(cells)} ячеек")
+                    
+                    # Стратегия 1: Ищем пары ячеек "тип топлива - цена"
+                    for i, cell in enumerate(cells[:-1]):
+                        fuel_text = cell.get_text().strip()
+                        price_text = cells[i + 1].get_text().strip()
+                        
+                        logger.debug(f"    Проверяем пару: '{fuel_text}' -> '{price_text}'")
+                        
+                        # Проверяем, содержит ли текст название топлива
+                        normalized_fuel = self._normalize_fuel_name(fuel_text)
+                        if normalized_fuel:
+                            price = self._extract_price_from_text(price_text)
+                            if price and price > 30:  # Реальные цены больше 30 рублей
+                                prices[normalized_fuel] = price
+                                logger.debug(f"    ✅ Найдена пара: {normalized_fuel} = {price}")
+                    
+                    # Стратегия 2: Ищем цены в одной строке (разные колонки для разных видов топлива)
+                    if len(cells) >= 4:  # Достаточно ячеек для нескольких видов топлива
+                        potential_prices = []
+                        for cell in cells[1:]:  # Пропускаем первую ячейку (обычно название)
+                            price = self._extract_price_from_text(cell.get_text().strip())
+                            if price and price > 30:
+                                potential_prices.append(price)
+                        
+                        # Если нашли несколько цен в одной строке, присваиваем по порядку
+                        if len(potential_prices) >= 2:
+                            fuel_mapping = ['АИ-92', 'АИ-95', 'АИ-98', 'АИ-100', 'ДТ', 'Пропан']
+                            for i, price in enumerate(potential_prices[:6]):
+                                if i < len(fuel_mapping):
+                                    prices[fuel_mapping[i]] = price
+                                    logger.debug(f"    ✅ По позиции: {fuel_mapping[i]} = {price}")
+                    
+                    # Если нашли что-то, не ищем в других таблицах
+                    if prices:
+                        break
+                        
+                if prices:
+                    break
+                    
         except Exception as e:
             logger.debug(f"Ошибка общего извлечения из таблиц: {e}")
         
@@ -770,37 +837,88 @@ class RussiaBaseRegionalParser(BaseParser):
         prices = {}
         
         try:
-            # Различные паттерны для поиска цен
+            logger.debug("Запуск поиска через регулярные выражения")
+            
+            # Более мощные паттерны для поиска цен
             patterns = [
-                # АИ-92: 55.5 или АИ-92</td><td>55.5
-                r'(АИ-?\d+|дизель|газ)[^\d]*?(\d+\.?\d*)\s*руб',
-                r'(АИ-?\d+|дизель|газ)[^>]*?[>:][\s]*(\d+\.?\d*)',
-                r'"(ai-?\d+|diesel|gas)"[^:]*?[:\s]*(\d+\.?\d*)',
-                # Для средних цен
-                r'средняя\s+цена[^:]*?(АИ-?\d+|дизель|газ)[^:]*?(\d+\.?\d*)',
-                # Цены в рублях
-                r'(\d+\.?\d*)\s*₽[^a-zA-Zа-яА-Я]*?(АИ-?\d+|дизель|газ)',
+                # Прямые паттерны с ценами
+                r'АИ-?92[^\d]*?(\d{2}\.\d{1,2})',
+                r'АИ-?95[^\d]*?(\d{2}\.\d{1,2})',
+                r'АИ-?98[^\d]*?(\d{2}\.\d{1,2})',
+                r'АИ-?100[^\d]*?(\d{2}\.\d{1,2})',
+                r'(?:дизель|ДТ)[^\d]*?(\d{2}\.\d{1,2})',
+                r'(?:газ|пропан)[^\d]*?(\d{2}\.\d{1,2})',
+                
+                # Обратные паттерны (цена перед топливом)
+                r'(\d{2}\.\d{1,2})[^\d]*?АИ-?92',
+                r'(\d{2}\.\d{1,2})[^\d]*?АИ-?95',
+                r'(\d{2}\.\d{1,2})[^\d]*?АИ-?98',
+                r'(\d{2}\.\d{1,2})[^\d]*?АИ-?100',
+                r'(\d{2}\.\d{1,2})[^\d]*?(?:дизель|ДТ)',
+                r'(\d{2}\.\d{1,2})[^\d]*?(?:газ|пропан)',
+                
+                # Паттерны с рублями
+                r'АИ-?92[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)',
+                r'АИ-?95[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)',
+                r'АИ-?98[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)',
+                r'АИ-?100[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)',
+                r'(?:дизель|ДТ)[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)',
+                r'(?:газ|пропан)[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)',
+                
+                # Средние цены
+                r'средн[^\d]*?АИ-?92[^\d]*?(\d{2}\.\d{1,2})',
+                r'средн[^\d]*?АИ-?95[^\d]*?(\d{2}\.\d{1,2})',
+                r'средн[^\d]*?АИ-?98[^\d]*?(\d{2}\.\d{1,2})',
+                r'средн[^\d]*?АИ-?100[^\d]*?(\d{2}\.\d{1,2})',
+                r'средн[^\d]*?(?:дизель|ДТ)[^\d]*?(\d{2}\.\d{1,2})',
+                r'средн[^\d]*?(?:газ|пропан)[^\d]*?(\d{2}\.\d{1,2})',
             ]
             
-            for pattern in patterns:
-                matches = re.finditer(pattern, html_content, re.IGNORECASE | re.DOTALL)
-                for match in matches:
-                    try:
-                        if len(match.groups()) >= 2:
-                            fuel_raw = match.group(1)
-                            price_raw = match.group(2)
+            fuel_type_patterns = {
+                'АИ-92': [r'АИ-?92[^\d]*?(\d{2}\.\d{1,2})', r'(\d{2}\.\d{1,2})[^\d]*?АИ-?92', r'АИ-?92[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)', r'средн[^\d]*?АИ-?92[^\d]*?(\d{2}\.\d{1,2})'],
+                'АИ-95': [r'АИ-?95[^\d]*?(\d{2}\.\d{1,2})', r'(\d{2}\.\d{1,2})[^\d]*?АИ-?95', r'АИ-?95[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)', r'средн[^\d]*?АИ-?95[^\d]*?(\d{2}\.\d{1,2})'],
+                'АИ-98': [r'АИ-?98[^\d]*?(\d{2}\.\d{1,2})', r'(\d{2}\.\d{1,2})[^\d]*?АИ-?98', r'АИ-?98[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)', r'средн[^\d]*?АИ-?98[^\d]*?(\d{2}\.\d{1,2})'],
+                'АИ-100': [r'АИ-?100[^\d]*?(\d{2}\.\d{1,2})', r'(\d{2}\.\d{1,2})[^\d]*?АИ-?100', r'АИ-?100[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)', r'средн[^\d]*?АИ-?100[^\d]*?(\d{2}\.\d{1,2})'],
+                'ДТ': [r'(?:дизель|ДТ)[^\d]*?(\d{2}\.\d{1,2})', r'(\d{2}\.\d{1,2})[^\d]*?(?:дизель|ДТ)', r'(?:дизель|ДТ)[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)', r'средн[^\d]*?(?:дизель|ДТ)[^\d]*?(\d{2}\.\d{1,2})'],
+                'Пропан': [r'(?:газ|пропан)[^\d]*?(\d{2}\.\d{1,2})', r'(\d{2}\.\d{1,2})[^\d]*?(?:газ|пропан)', r'(?:газ|пропан)[^0-9]*?(\d{2}[.,]\d{1,2})\s*(?:руб|₽)', r'средн[^\d]*?(?:газ|пропан)[^\d]*?(\d{2}\.\d{1,2})']
+            }
+            
+            for fuel_type, patterns_list in fuel_type_patterns.items():
+                for pattern in patterns_list:
+                    matches = re.finditer(pattern, html_content, re.IGNORECASE | re.DOTALL)
+                    for match in matches:
+                        try:
+                            price_str = match.group(1).replace(',', '.')
+                            price = float(price_str)
                             
-                            # Иногда порядок может быть обратным
-                            if not re.match(r'\d+\.?\d*', price_raw):
-                                fuel_raw, price_raw = price_raw, fuel_raw
-                            
-                            normalized_fuel = self._normalize_fuel_name(fuel_raw)
-                            if normalized_fuel:
-                                price = self._extract_price_from_text(price_raw)
-                                if price and price > 10 and price < 200:  # Разумные границы цен
-                                    prices[normalized_fuel] = price
-                    except:
-                        continue
+                            if 30 <= price <= 200:  # Разумные границы цен
+                                if fuel_type not in prices:  # Берем первое найденное значение
+                                    prices[fuel_type] = price
+                                    logger.debug(f"✅ Regex: {fuel_type} = {price}")
+                                    
+                        except (ValueError, AttributeError):
+                            continue
+            
+            # Дополнительный поиск в JSON данных
+            json_pattern = r'"price":\s*(\d{2}\.\d{1,2})'
+            json_matches = re.finditer(json_pattern, html_content)
+            found_json_prices = []
+            
+            for match in json_matches:
+                try:
+                    price = float(match.group(1))
+                    if 30 <= price <= 200:
+                        found_json_prices.append(price)
+                except:
+                    continue
+            
+            # Если нашли цены в JSON, присваиваем их по порядку
+            if found_json_prices and not prices:
+                fuel_mapping = ['АИ-92', 'АИ-95', 'АИ-98', 'АИ-100', 'ДТ', 'Пропан']
+                for i, price in enumerate(found_json_prices[:6]):
+                    if i < len(fuel_mapping):
+                        prices[fuel_mapping[i]] = price
+                        logger.debug(f"✅ JSON: {fuel_mapping[i]} = {price}")
                         
         except Exception as e:
             logger.debug(f"Ошибка regex извлечения: {e}")
