@@ -78,16 +78,30 @@ def parse_arguments():
 def list_networks():
     """Выводит список доступных сетей"""
     print("\nДоступные сети АЗС:")
-    print("=" * 50)
+    print("=" * 70)
     
     for key, config in GAS_STATION_NETWORKS.items():
-        print(f"  {key:15} - {config['name']:20} (тип: {config['type']})")
-        if config['type'] == 'russiabase':
-            print(f"{'':17}   Страниц: {config.get('max_pages', 1)}")
-        elif config['type'] == 'api':
-            print(f"{'':17}   API: {config.get('api_base', 'N/A')}")
+        network_type = config['type']
+        type_info = ""
+        
+        if network_type == 'russiabase':
+            type_info = f"Страниц: {config.get('max_pages', 1)}"
+        elif network_type == 'russiabase_regional':
+            type_info = f"Региональный парсер (все регионы России)"
+        elif network_type == 'api':
+            type_info = f"API: {config.get('api_base', 'N/A')}"
+        elif network_type == 'selenium':
+            type_info = f"Selenium WebDriver"
+        elif network_type == 'tatneft_api':
+            type_info = f"Татнефть API"
+        
+        print(f"  {key:18} - {config['name']:25} ({network_type})")
+        if type_info:
+            print(f"{'':22}   {type_info}")
     
     print(f"\nВсего доступно сетей: {len(GAS_STATION_NETWORKS)}")
+    print("\n💡 Для региональных цен используйте: python main.py --networks regional_prices")
+    print("💡 Или используйте специальный скрипт: python regional_parser_final.py --help")
 
 
 def main():
