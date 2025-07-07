@@ -27,13 +27,15 @@ GAS_STATION_NETWORKS = {
         "name": "Лукойл",
         "type": "russiabase",
         "brand_id": 119,
-        "base_url": "https://russiabase.ru/prices?brand=119"
+        "base_url": "https://russiabase.ru/prices?brand=119",
+        "supports_regions": True
     },
     "bashneft": {
         "name": "Башнефть", 
         "type": "russiabase",
         "brand_id": 292,
-        "base_url": "https://russiabase.ru/prices?brand=292"
+        "base_url": "https://russiabase.ru/prices?brand=292",
+        "supports_regions": True
     },
     "gazprom": {
         "name": "Газпром",
@@ -60,7 +62,8 @@ GAS_STATION_NETWORKS = {
         "name": "Нефтьмагистраль",
         "type": "russiabase",
         "brand_id": 402,
-        "base_url": "https://russiabase.ru/prices?brand=402"
+        "base_url": "https://russiabase.ru/prices?brand=402",
+        "supports_regions": True
     }
 }
 
@@ -81,6 +84,8 @@ OUTPUT_SCHEMA = {
     "station_name": str,
     "address": str,
     "city": str,
+    "region": str,  # Добавлено поле региона
+    "region_id": int,  # Добавлено поле ID региона
     "latitude": float,
     "longitude": float,
     "fuel_type": str,
@@ -88,4 +93,13 @@ OUTPUT_SCHEMA = {
     "currency": str,
     "last_updated": str,
     "source": str
+}
+
+# Настройки для работы с регионами
+REGIONS_CONFIG = {
+    "regions_file": "regions.md",
+    "default_regions": [77, 78, 50, 40, 23, 66],  # Москва, СПб, Московская, Курская, Краснодар, Свердловская
+    "enable_region_filtering": True,
+    "enable_multi_region_parsing": True,
+    "max_regions_per_network": 10  # Максимум регионов для парсинга одновременно
 }
