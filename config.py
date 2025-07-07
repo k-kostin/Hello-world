@@ -61,9 +61,9 @@ GAS_STATION_NETWORKS = {
     "neftmagistral": {
         "name": "Нефтьмагистраль",
         "type": "russiabase",
-        "brand_id": 424,
+        "brand_id": 402,
         "max_pages": 60,
-        "base_url": "https://russiabase.ru/prices?brand=424"
+        "base_url": "https://russiabase.ru/prices?brand=402"
     }
 }
 
