@@ -5,6 +5,7 @@
 """
 import argparse
 import sys
+import json
 from datetime import datetime
 from pathlib import Path
 from loguru import logger
@@ -299,15 +300,144 @@ def print_orchestrator_summary(summary, duration):
             print(f"  {network}: {error}")
 
 
+def save_regional_excel_report(results, filename):
+    """Создает детальный Excel отчет с региональными ценами"""
+    import pandas as pd
+    
+    try:
+        # Подготавливаем данные для разных листов
+        
+        # 1. Основная таблица с ценами по регионам
+        main_data = []
+        for result in results:
+            if result.status == 'success' and result.fuel_prices:
+                base_row = {
+                    'region_id': result.region_id,
+                    'region_name': result.region_name,
+                    'timestamp': result.timestamp,
+                    'url': result.url,
+                    'status': result.status
+                }
+                
+                # Добавляем цены по типам топлива как отдельные колонки
+                for fuel_type, price in result.fuel_prices.items():
+                    base_row[f'{fuel_type}'] = price
+                
+                main_data.append(base_row)
+        
+        # 2. Сводная статистика по типам топлива
+        fuel_stats = {}
+        for result in results:
+            if result.status == 'success' and result.fuel_prices:
+                for fuel_type, price in result.fuel_prices.items():
+                    if fuel_type not in fuel_stats:
+                        fuel_stats[fuel_type] = []
+                    fuel_stats[fuel_type].append(price)
+        
+        # Статистика по топливу
+        fuel_summary = []
+        for fuel_type, prices in fuel_stats.items():
+            if prices:
+                fuel_summary.append({
+                    'Тип топлива': fuel_type,
+                    'Регионов с данными': len(prices),
+                    'Средняя цена': round(sum(prices) / len(prices), 2),
+                    'Минимальная цена': round(min(prices), 2),
+                    'Максимальная цена': round(max(prices), 2),
+                    'Разброс цен': round(max(prices) - min(prices), 2)
+                })
+        
+        # 3. Топ самых дорогих и дешевых регионов
+        successful_results = [r for r in results if r.status == 'success' and r.fuel_prices]
+        
+        # Создаем Excel файл с несколькими листами
+        with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+            
+            # Лист 1: Основные данные
+            if main_data:
+                main_df = pd.DataFrame(main_data)
+                main_df.to_excel(writer, sheet_name='Цены по регионам', index=False)
+            
+            # Лист 2: Сводная статистика
+            if fuel_summary:
+                summary_df = pd.DataFrame(fuel_summary)
+                summary_df.to_excel(writer, sheet_name='Статистика по топливу', index=False)
+            
+            # Лист 3: Самые дорогие регионы (по АИ-95 если есть)
+            if successful_results:
+                ai95_regions = [(r.region_name, r.fuel_prices.get('АИ-95', 0)) 
+                               for r in successful_results 
+                               if r.fuel_prices.get('АИ-95', 0) > 0]
+                
+                if ai95_regions:
+                    ai95_sorted = sorted(ai95_regions, key=lambda x: x[1], reverse=True)
+                    expensive_df = pd.DataFrame(ai95_sorted[:10], columns=['Регион', 'Цена АИ-95'])
+                    expensive_df.to_excel(writer, sheet_name='Дорогие регионы АИ-95', index=False)
+                    
+                    # Лист 4: Самые дешевые регионы
+                    cheap_df = pd.DataFrame(ai95_sorted[-10:], columns=['Регион', 'Цена АИ-95'])
+                    cheap_df.to_excel(writer, sheet_name='Дешевые регионы АИ-95', index=False)
+            
+            # Лист 5: Общая информация
+            info_data = [
+                ['Дата и время парсинга', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+                ['Всего регионов обработано', len(results)],
+                ['Успешно получены данные', len(successful_results)],
+                ['Регионов с ошибками', len(results) - len(successful_results)],
+                ['Типов топлива найдено', len(fuel_stats)]
+            ]
+            
+            info_df = pd.DataFrame(info_data, columns=['Параметр', 'Значение'])
+            info_df.to_excel(writer, sheet_name='Общая информация', index=False)
+            
+            # Настройка ширины колонок для всех листов
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+                # Устанавливаем ширину колонок
+                for i, col in enumerate(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']):
+                    if sheet_name == 'Цены по регионам':
+                        if i == 1:  # Колонка с названием региона
+                            worksheet.set_column(f'{col}:{col}', 30)
+                        elif i > 4:  # Колонки с ценами
+                            worksheet.set_column(f'{col}:{col}', 12)
+                        else:
+                            worksheet.set_column(f'{col}:{col}', 15)
+                    else:
+                        worksheet.set_column(f'{col}:{col}', 20)
+    
+    except Exception as e:
+        logger.error(f"Ошибка создания Excel отчета: {e}")
+        # Если не удалось создать Excel, создаем простую версию
+        try:
+            simple_data = []
+            for result in results:
+                if result.status == 'success':
+                    row = {
+                        'Регион ID': result.region_id,
+                        'Название региона': result.region_name,
+                        'Статус': result.status,
+                        'Дата': result.timestamp
+                    }
+                    if result.fuel_prices:
+                        for fuel_type, price in result.fuel_prices.items():
+                            row[fuel_type] = price
+                    simple_data.append(row)
+            
+            if simple_data:
+                simple_df = pd.DataFrame(simple_data)
+                simple_df.to_excel(filename, index=False)
+        except Exception as e2:
+            logger.error(f"Не удалось создать даже простой Excel файл: {e2}")
+
+
 def save_regional_data(results):
-    """Сохраняет данные в файлы"""
+    """Сохраняет данные в файлы (JSON и Excel)"""
     if not results:
         return
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Сохраняем в JSON
-    import json
     json_filename = f"regional_prices_{timestamp}.json"
     
     json_data = []
@@ -325,6 +455,12 @@ def save_regional_data(results):
         json.dump(json_data, f, ensure_ascii=False, indent=2)
     
     logger.info(f"💾 Данные сохранены в JSON: {json_filename}")
+    
+    # Сохраняем в Excel
+    excel_filename = f"regional_prices_{timestamp}.xlsx"
+    save_regional_excel_report(results, excel_filename)
+    
+    logger.info(f"📊 Данные сохранены в Excel: {excel_filename}")
 
 
 def main():
