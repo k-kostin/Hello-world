@@ -255,27 +255,31 @@ def print_regional_results(results, duration):
             print(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} руб/л")
     
     print(f"\n📋 Топ-10 регионов по ценам:")
-    print("-" * 80)
-    print(f"{'Регион':<30} {'АИ-92':<8} {'АИ-95':<8} {'АИ-98':<8} {'ДТ':<8} {'Пропан':<8}")
-    print("-" * 80)
+    print("-" * 120)
+    print(f"{'Регион':<25} {'АИ-92':<7} {'АИ-92+':<7} {'АИ-95':<7} {'АИ-95+':<7} {'АИ-98':<7} {'АИ-100':<8} {'ДТ':<7} {'ДТ+':<7} {'Пропан':<7}")
+    print("-" * 120)
     
     # Показываем первые 10 успешных регионов
     for i, result in enumerate(successful_regions[:10], 1):
-        region_name = result.region_name[:29]
+        region_name = result.region_name[:24]
         prices = result.fuel_prices
         
         ai92 = f"{prices.get('АИ-92', 0):.1f}" if prices.get('АИ-92') else "-"
+        ai92_plus = f"{prices.get('АИ-92+', 0):.1f}" if prices.get('АИ-92+') else "-"
         ai95 = f"{prices.get('АИ-95', 0):.1f}" if prices.get('АИ-95') else "-"
+        ai95_plus = f"{prices.get('АИ-95+', 0):.1f}" if prices.get('АИ-95+') else "-"
         ai98 = f"{prices.get('АИ-98', 0):.1f}" if prices.get('АИ-98') else "-"
+        ai100 = f"{prices.get('АИ-100', 0):.1f}" if prices.get('АИ-100') else "-"
         dt = f"{prices.get('ДТ', 0):.1f}" if prices.get('ДТ') else "-"
+        dt_plus = f"{prices.get('ДТ+', 0):.1f}" if prices.get('ДТ+') else "-"
         propan = f"{prices.get('Пропан', 0):.1f}" if prices.get('Пропан') else "-"
         
-        print(f"{region_name:<30} {ai92:<8} {ai95:<8} {ai98:<8} {dt:<8} {propan:<8}")
+        print(f"{region_name:<25} {ai92:<7} {ai92_plus:<7} {ai95:<7} {ai95_plus:<7} {ai98:<7} {ai100:<8} {dt:<7} {dt_plus:<7} {propan:<7}")
     
     if len(successful_regions) > 10:
         print(f"... и еще {len(successful_regions) - 10} регионов")
     
-    print("-" * 80)
+    print("-" * 120)
 
 
 def print_orchestrator_summary(summary, duration):
