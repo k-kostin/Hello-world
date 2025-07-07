@@ -18,7 +18,7 @@ class TatneftParser(BaseParser):
         self.session.headers.update(DEFAULT_HEADERS)
         self.api_base: str = config["api_base"].rstrip("/")  # https://api.gs.tatneft.ru/api/v2
         self.stations_endpoint: str = config.get("stations_endpoint", "/azs/")
-        self.station_detail_endpoint: str = config.get("station_detail_endpoint", "/azs/{station_id}")
+        # Removed individual station detail endpoint as it's not working and not needed
         self.fuel_types_endpoint: str = config.get("fuel_types_endpoint", "/azs/fuel_types/")
         self._fuel_type_map: Optional[Dict[int, str]] = None
 
@@ -50,70 +50,93 @@ class TatneftParser(BaseParser):
         return self._fuel_type_map
 
     def _fetch_stations_list(self) -> List[Dict[str, Any]]:
-        """Получает список всех АЗС"""
+        """Получает список всех АЗС с полной информацией"""
         url = self.api_base + self.stations_endpoint
         logger.info(f"Запрашиваем список АЗС: {url}")
         data = self._get_json(url)
-        # API возвращает словарь {"results":[...]} или список
+        
+        # API возвращает словарь с полем "data" содержащим массив станций
+        stations = []
         if isinstance(data, dict):
-            stations = data.get("results") or data.get("data") or []
-        else:
+            if "data" in data and isinstance(data["data"], list):
+                stations = data["data"]
+            elif "results" in data and isinstance(data["results"], list):
+                stations = data["results"]
+            elif isinstance(data, list):
+                stations = data
+        elif isinstance(data, list):
             stations = data
+            
         logger.info(f"Получено {len(stations)} записей об АЗС")
         return stations
 
-    def _fetch_station_details(self, station_id: str) -> Dict[str, Any]:
-        url = self.api_base + self.station_detail_endpoint.format(station_id=station_id)
-        return self._get_json(url)
-
     # ---------- BaseParser abstract implementations ----------
     def fetch_data(self) -> List[Dict[str, Any]]:
+        """Получает данные АЗС, используя только основной endpoint /azs/"""
         stations = self._fetch_stations_list()
-        detailed_data = []
-        fuel_type_map = self._fetch_fuel_types()
+        
+        # Пытаемся получить справочник типов топлива, но если не получается - не критично
+        try:
+            fuel_type_map = self._fetch_fuel_types()
+        except Exception as e:
+            logger.warning(f"Не удалось загрузить справочник типов топлива: {e}")
+            fuel_type_map = {}
 
+        # Теперь просто возвращаем станции с добавленным справочником топлива
+        # Не делаем дополнительных запросов к /azs/{id}, так как они возвращают 404
+        detailed_data = []
         for idx, station in enumerate(stations):
-            sid = station.get("id") or station.get("azs_id") or station.get("GPNAZSID")
-            if not sid:
-                continue
             try:
-                logger.debug(f"[{idx+1}/{len(stations)}] station {sid}")
-                details = self.retry_on_failure(self._fetch_station_details, sid)
                 combined = {
                     "station_info": station,
-                    "detail": details,
                     "fuel_type_map": fuel_type_map,
                 }
                 detailed_data.append(combined)
+                logger.debug(f"[{idx+1}/{len(stations)}] Обработана станция {station.get('id', 'N/A')}")
             except Exception as e:
-                logger.warning(f"Ошибка получения деталей станции {sid}: {e}")
-                self.errors.append(f"station {sid}: {e}")
-            if idx < len(stations) - 1:
-                self.add_delay()
+                logger.warning(f"Ошибка обработки станции {station.get('id', 'N/A')}: {e}")
+                self.errors.append(f"station {station.get('id', 'N/A')}: {e}")
+        
         return detailed_data
 
     def parse_station_data(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Парсит данные станции из ответа /azs/ endpoint"""
         station = raw_data.get("station_info", {})
-        detail = raw_data.get("detail", {})
         fuel_type_map: Dict[int, str] = raw_data.get("fuel_type_map", {})
 
-        # базовые поля станции
-        station_id = str(station.get("id"))
+        # Извлекаем основную информацию о станции
+        station_id = str(station.get("id", ""))
         name = station.get("name") or station.get("title", "")
-        city = station.get("city") or station.get("settlement", "")
+        region = station.get("region", "")
         address = station.get("address", "")
-        latitude = station.get("latitude") or station.get("lat")
-        longitude = station.get("longitude") or station.get("lng")
+        latitude = station.get("lat") or station.get("latitude")
+        longitude = station.get("lon") or station.get("longitude")
+        number = station.get("number")
+
+        # Формируем адрес если он пустой
+        if not address and region:
+            address = region
 
         fuel_entries = []
-        fuels = detail.get("fuel") or detail.get("fuels") or detail.get("prices") or []
+        # В ответе /azs/ топливо находится в поле "fuel"
+        fuels = station.get("fuel", [])
 
         for fuel in fuels:
             try:
-                fuel_type_id = fuel.get("fuel_type_id") or fuel.get("id")
-                fuel_type = fuel_type_map.get(int(fuel_type_id), str(fuel_type_id))
-                price_val = fuel.get("price") or fuel.get("price_value")
-                currency = fuel.get("currency_code") or fuel.get("currency") or "RUB"
+                # Пытаемся извлечь информацию о топливе из разных возможных полей
+                fuel_type_id = fuel.get("fuel_type_id") or fuel.get("id") or fuel.get("type_id")
+                
+                # Определяем тип топлива
+                if fuel_type_id and fuel_type_map:
+                    fuel_type = fuel_type_map.get(int(fuel_type_id), f"Тип_{fuel_type_id}")
+                else:
+                    # Пытаемся получить название из самого объекта топлива
+                    fuel_type = (fuel.get("name") or fuel.get("title") or 
+                                fuel.get("short_name") or f"Тип_{fuel_type_id}")
+
+                # Извлекаем цену
+                price_val = fuel.get("price") or fuel.get("price_value") or fuel.get("cost")
+                currency = station.get("currency_code", "RUB")
 
                 price = self.clean_price(price_val)
                 if price is None:
@@ -123,15 +146,21 @@ class TatneftParser(BaseParser):
                     "station_id": station_id,
                     "station_name": name,
                     "address": self.clean_address(address),
-                    "city": city,
+                    "city": region,
                     "latitude": float(latitude) if latitude else None,
                     "longitude": float(longitude) if longitude else None,
                     "fuel_type": fuel_type,
                     "price": price,
                     "currency": currency,
-                    "source": f"{self.api_base}/azs/{station_id}"
+                    "source": f"{self.api_base}/azs/"
                 }
+                
+                # Добавляем дополнительную информацию если доступна
+                if number:
+                    entry["station_number"] = number
+                    
                 fuel_entries.append(entry)
+                
             except Exception as e:
                 logger.warning(f"Ошибка обработки топлива станции {station_id}: {e}")
                 continue
