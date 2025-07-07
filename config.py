@@ -64,6 +64,14 @@ GAS_STATION_NETWORKS = {
         "brand_id": 402,
         "base_url": "https://russiabase.ru/prices?brand=402",
         "supports_regions": True
+    },
+    "regional_prices": {
+        "name": "Региональные цены",
+        "type": "russiabase_regional",
+        "base_url": "https://russiabase.ru/prices",
+        "delay": 1.5,
+        "max_regions": None,
+        "description": "Средние цены на топливо по регионам России"
     }
 }
 
