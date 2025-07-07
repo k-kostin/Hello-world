@@ -158,6 +158,11 @@ class TatneftParser(BaseParser):
                 # Добавляем дополнительную информацию если доступна
                 if number:
                     entry["station_number"] = number
+                
+                # Исключаем записи из Республики Беларусь
+                if region == "Республика Беларусь":
+                    logger.debug(f"Пропускаем станцию {station_id} в Беларуси")
+                    continue
                     
                 fuel_entries.append(entry)
                 
