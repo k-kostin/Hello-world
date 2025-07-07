@@ -676,25 +676,48 @@ class RussiaBaseRegionalParser(BaseParser):
             prices_row = None
             rows = main_table.select('tbody tr')
             
-            for row in rows:
+            for i, row in enumerate(rows):
                 cells = row.select('td.Table_column__20dGl')
                 if cells:
-                    # Ищем строку со средними ценами или первую строку с числами
-                    first_cell_text = cells[0].get_text().strip().lower()
+                    first_cell_text = cells[0].get_text().strip()
                     
-                    # Если это строка со средними ценами
-                    if 'средн' in first_cell_text or 'average' in first_cell_text:
-                        prices_row = row
-                        break
+                    # Проверяем, является ли это строкой с ценами (не заголовками)
+                    # Строка с ценами должна содержать числовые значения, а не названия топлива
+                    is_price_row = False
                     
-                    # Или если первая ячейка содержит цену
-                    if self._extract_price_from_text(first_cell_text):
+                    # Если первая ячейка содержит явно цену (и это не похоже на название топлива)
+                    extracted_price = self._extract_price_from_text(first_cell_text)
+                    if extracted_price and not self._normalize_fuel_name(first_cell_text):
+                        # Это выглядит как цена, а не название топлива
+                        is_price_row = True
+                    
+                    # Дополнительная проверка: если это строка со средними ценами
+                    if 'средн' in first_cell_text.lower() or 'average' in first_cell_text.lower():
+                        is_price_row = True
+                        
+                    # Еще одна проверка: подсчитаем сколько ячеек выглядят как чистые цены
+                    price_like_cells = 0
+                    fuel_name_cells = 0
+                    for cell in cells[:6]:  # Проверяем первые 6 ячеек
+                        cell_text = cell.get_text().strip()
+                        if self._extract_price_from_text(cell_text) and not self._normalize_fuel_name(cell_text):
+                            price_like_cells += 1
+                        elif self._normalize_fuel_name(cell_text):
+                            fuel_name_cells += 1
+                    
+                    # Если большинство ячеек выглядят как цены, а не названия топлива
+                    if price_like_cells >= 3 and fuel_name_cells <= 2:
+                        is_price_row = True
+                    
+                    if is_price_row:
                         prices_row = row
+                        logger.debug(f"Выбрана строка {i} как строка с ценами")
                         break
             
-            # Если не нашли специальную строку, берем первую строку с данными
+            # Если не нашли строку с ценами, пробуем взять последнюю строку (часто цены в последней строке)
             if not prices_row and rows:
-                prices_row = rows[0]
+                prices_row = rows[-1]
+                logger.debug("Взята последняя строка как строка с ценами")
                 
             if prices_row:
                 price_cells = prices_row.select('td.Table_column__20dGl')
@@ -718,17 +741,27 @@ class RussiaBaseRegionalParser(BaseParser):
                             # Типичный порядок: АИ-92, АИ-95, АИ-98, АИ-100, Дизель, Газ
                             position_mapping = {
                                 0: 'АИ-92',
-                                1: 'АИ-95', 
-                                2: 'АИ-98',
-                                3: 'АИ-100',
-                                4: 'ДТ',
-                                5: 'Пропан'
+                                1: 'АИ-92',  # АИ-92+
+                                2: 'АИ-95', 
+                                3: 'АИ-95',  # АИ-95+
+                                4: 'АИ-98',
+                                5: 'АИ-100',
+                                6: 'ДТ',
+                                7: 'ДТ',     # ДТ+
+                                8: 'Пропан'
                             }
                             fuel_type = position_mapping.get(i)
                         
                         if fuel_type:
-                            prices[fuel_type] = price
-                            logger.debug(f"Найдена цена: {fuel_type} = {price}")
+                            # Если у нас уже есть цена для этого типа топлива, берем более низкую (базовый тип)
+                            if fuel_type not in prices:
+                                prices[fuel_type] = price
+                                logger.debug(f"Найдена цена: {fuel_type} = {price}")
+                            else:
+                                # Для одинаковых типов топлива (АИ-92 и АИ-92+) берем более низкую цену
+                                if price < prices[fuel_type]:
+                                    prices[fuel_type] = price
+                                    logger.debug(f"Обновлена цена: {fuel_type} = {price}")
                             
         except Exception as e:
             logger.debug(f"Ошибка извлечения из таблицы russiabase.ru: {e}")
