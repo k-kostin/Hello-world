@@ -27,16 +27,35 @@ class DataProcessor:
             logger.error(f"Директория {data_dir} не существует")
             return None
         
-        # Ищем файлы с объединенными данными
-        files = [f for f in os.listdir(data_dir) if f.startswith("all_gas_stations_") and f.endswith(".xlsx")]
+        # Ищем файлы с объединенными данными (поддерживает новую и старую схему именования)
+        all_files = os.listdir(data_dir)
         
-        if not files:
-            logger.error("Файлы с данными не найдены")
+        # Новая схема: all_gas_stations_, gas_stations_ (включая варианты с именами сетей)
+        combined_files = [f for f in all_files if 
+                         (f.startswith("all_gas_stations_") or f.startswith("gas_stations_")) 
+                         and f.endswith(".xlsx")]
+        
+        if not combined_files:
+            logger.error("Файлы с объединенными данными не найдены")
             return None
         
-        # Сортируем по дате в названии файла
-        files.sort(reverse=True)
-        latest_file = files[0]
+        # Сортируем по дате в названии файла (извлекаем дату из конца имени файла)
+        def extract_timestamp(filename):
+            try:
+                # Извлекаем YYYYMMDD_HHMMSS из конца файла
+                name_parts = filename.replace('.xlsx', '').split('_')
+                # Ищем части, которые выглядят как дата и время
+                if len(name_parts) >= 2:
+                    date_part = name_parts[-2]  # YYYYMMDD
+                    time_part = name_parts[-1]  # HHMMSS
+                    if len(date_part) == 8 and len(time_part) == 6:
+                        return datetime.strptime(f"{date_part}_{time_part}", "%Y%m%d_%H%M%S")
+            except:
+                pass
+            return datetime.min
+        
+        combined_files.sort(key=extract_timestamp, reverse=True)
+        latest_file = combined_files[0]
         
         filepath = os.path.join(data_dir, latest_file)
         logger.info(f"Загружаем данные из {filepath}")
@@ -195,23 +214,39 @@ class DataProcessor:
         if not os.path.exists(data_dir):
             return None
         
-        # Ищем все файлы с данными
-        files = [f for f in os.listdir(data_dir) if f.startswith("all_gas_stations_") and f.endswith(".xlsx")]
+        # Ищем все файлы с объединенными данными (поддерживает новую и старую схему именования)
+        all_files = os.listdir(data_dir)
+        combined_files = [f for f in all_files if 
+                         (f.startswith("all_gas_stations_") or f.startswith("gas_stations_")) 
+                         and f.endswith(".xlsx")]
         
-        if len(files) < 2:
+        if len(combined_files) < 2:
             logger.warning("Недостаточно исторических данных для анализа трендов")
             return None
         
-        files.sort()  # Сортируем по дате
+        # Функция для извлечения даты из имени файла
+        def extract_timestamp(filename):
+            try:
+                # Извлекаем YYYYMMDD_HHMMSS из конца файла
+                name_parts = filename.replace('.xlsx', '').split('_')
+                if len(name_parts) >= 2:
+                    date_part = name_parts[-2]  # YYYYMMDD
+                    time_part = name_parts[-1]  # HHMMSS
+                    if len(date_part) == 8 and len(time_part) == 6:
+                        return datetime.strptime(f"{date_part}_{time_part}", "%Y%m%d_%H%M%S")
+            except:
+                pass
+            return None
+        
+        # Сортируем файлы по дате
+        file_dates = [(f, extract_timestamp(f)) for f in combined_files]
+        file_dates = [(f, d) for f, d in file_dates if d is not None]
+        file_dates.sort(key=lambda x: x[1])
         
         trends_data = []
         
-        for file in files:
+        for file, file_date in file_dates:
             try:
-                # Извлекаем дату из названия файла
-                date_str = file.split("_")[3] + "_" + file.split("_")[4].split(".")[0]
-                file_date = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
-                
                 filepath = os.path.join(data_dir, file)
                 df = pl.read_excel(filepath)
                 

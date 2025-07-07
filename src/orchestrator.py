@@ -100,7 +100,23 @@ class GasStationOrchestrator:
     def _save_combined_data(self, combined_df: pl.DataFrame):
         """Сохраняет объединенные данные всех сетей"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"all_gas_stations_{timestamp}.xlsx"
+        
+        # Определяем, включены ли все доступные сети
+        all_available_networks = set(GAS_STATION_NETWORKS.keys())
+        requested_networks = set(self.networks)
+        is_all_networks = requested_networks == all_available_networks
+        
+        # Генерируем подходящее имя файла
+        if is_all_networks:
+            filename = f"all_gas_stations_{timestamp}.xlsx"
+        elif len(requested_networks) <= 3:
+            # Для небольшого количества сетей включаем их названия в имя файла
+            network_names = "_".join(sorted(requested_networks))
+            filename = f"gas_stations_{network_names}_{timestamp}.xlsx"
+        else:
+            # Для многих сетей используем общее название
+            filename = f"gas_stations_{timestamp}.xlsx"
+        
         filepath = os.path.join(OUTPUT_DIR, filename)
         
         try:
@@ -111,7 +127,15 @@ class GasStationOrchestrator:
                        .sort(["network_name", "city", "station_name", "fuel_type"]))
             
             df_clean.write_excel(filepath)
-            logger.info(f"Объединенные данные сохранены в {filepath}")
+            
+            # Улучшенное логирование с информацией о включенных сетях
+            if is_all_networks:
+                logger.info(f"Объединенные данные ВСЕХ сетей сохранены в {filepath}")
+            else:
+                networks_list = ", ".join(sorted(requested_networks))
+                logger.info(f"Объединенные данные сетей ({networks_list}) сохранены в {filepath}")
+            
+            logger.info(f"Включенные сети: {len(requested_networks)} из {len(all_available_networks)} доступных")
             
             # Статистика
             stats = (df_clean
@@ -197,7 +221,6 @@ class GasStationOrchestrator:
             except Exception as e:
                 logger.warning(f"Ошибка при объединении данных: {e}")
                 logger.info("Сохраняем данные каждой сети отдельно")
-                # В случае ошибки объединения, продолжаем с отдельными файлами
             
             logger.info(f"Парсинг завершен за {duration}")
             logger.info(f"Успешно обработано сетей: {len(self.results)}")
