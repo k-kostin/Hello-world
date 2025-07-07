@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Финальный региональный парсер цен на топливо
+Региональный парсер цен на топливо
 Использует интегрированную архитектуру проекта парсеров АЗС
 """
 import argparse
@@ -28,15 +28,15 @@ def setup_logging():
 def parse_arguments():
     """Парсинг аргументов командной строки"""
     parser = argparse.ArgumentParser(
-        description="Финальный региональный парсер цен на топливо",
+        description="Региональный парсер цен на топливо",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры использования:
-  python regional_parser_final.py --all-regions           # Парсить все регионы
-  python regional_parser_final.py --popular-regions       # Парсить популярные регионы
-  python regional_parser_final.py --regions 77 78 50      # Парсить конкретные регионы (Москва, СПб, МО)
-  python regional_parser_final.py --max-regions 10        # Ограничить до 10 регионов
-  python regional_parser_final.py --list-regions          # Показать доступные регионы
+  python regional_parser.py --all-regions           # Парсить все регионы
+  python regional_parser.py --popular-regions       # Парсить популярные регионы
+  python regional_parser.py --regions 77 78 50      # Парсить конкретные регионы (Москва, СПб, МО)
+  python regional_parser.py --max-regions 10        # Ограничить до 10 регионов
+  python regional_parser.py --list-regions          # Показать доступные регионы
         """
     )
     
@@ -255,31 +255,34 @@ def print_regional_results(results, duration):
             print(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} руб/л")
     
     print(f"\n📋 Топ-10 регионов по ценам:")
-    print("-" * 120)
-    print(f"{'Регион':<25} {'АИ-92':<7} {'АИ-92+':<7} {'АИ-95':<7} {'АИ-95+':<7} {'АИ-98':<7} {'АИ-100':<8} {'ДТ':<7} {'ДТ+':<7} {'Пропан':<7}")
-    print("-" * 120)
+    print("-" * 140)
+    print(f"{'Регион':<25} {'АИ-80':<7} {'АИ-92':<7} {'АИ-92+':<7} {'АИ-95':<7} {'АИ-95+':<7} {'АИ-98':<7} {'АИ-98+':<7} {'АИ-100':<8} {'ДТ':<7} {'ДТ+':<7} {'Газ':<7} {'Пропан':<7}")
+    print("-" * 140)
     
     # Показываем первые 10 успешных регионов
     for i, result in enumerate(successful_regions[:10], 1):
         region_name = result.region_name[:24]
         prices = result.fuel_prices
         
+        ai80 = f"{prices.get('АИ-80', 0):.1f}" if prices.get('АИ-80') else "-"
         ai92 = f"{prices.get('АИ-92', 0):.1f}" if prices.get('АИ-92') else "-"
         ai92_plus = f"{prices.get('АИ-92+', 0):.1f}" if prices.get('АИ-92+') else "-"
         ai95 = f"{prices.get('АИ-95', 0):.1f}" if prices.get('АИ-95') else "-"
         ai95_plus = f"{prices.get('АИ-95+', 0):.1f}" if prices.get('АИ-95+') else "-"
         ai98 = f"{prices.get('АИ-98', 0):.1f}" if prices.get('АИ-98') else "-"
+        ai98_plus = f"{prices.get('АИ-98+', 0):.1f}" if prices.get('АИ-98+') else "-"
         ai100 = f"{prices.get('АИ-100', 0):.1f}" if prices.get('АИ-100') else "-"
         dt = f"{prices.get('ДТ', 0):.1f}" if prices.get('ДТ') else "-"
         dt_plus = f"{prices.get('ДТ+', 0):.1f}" if prices.get('ДТ+') else "-"
+        gas = f"{prices.get('Газ', 0):.1f}" if prices.get('Газ') else "-"
         propan = f"{prices.get('Пропан', 0):.1f}" if prices.get('Пропан') else "-"
         
-        print(f"{region_name:<25} {ai92:<7} {ai92_plus:<7} {ai95:<7} {ai95_plus:<7} {ai98:<7} {ai100:<8} {dt:<7} {dt_plus:<7} {propan:<7}")
+        print(f"{region_name:<25} {ai80:<7} {ai92:<7} {ai92_plus:<7} {ai95:<7} {ai95_plus:<7} {ai98:<7} {ai98_plus:<7} {ai100:<8} {dt:<7} {dt_plus:<7} {gas:<7} {propan:<7}")
     
     if len(successful_regions) > 10:
         print(f"... и еще {len(successful_regions) - 10} регионов")
     
-    print("-" * 120)
+    print("-" * 140)
 
 
 def print_orchestrator_summary(summary, duration):
@@ -481,7 +484,7 @@ def main():
             level="DEBUG"
         )
     
-    print("🏁 Финальный региональный парсер цен на топливо")
+    print("🏁 Региональный парсер цен на топливо")
     print("=" * 60)
     
     # Показать список регионов

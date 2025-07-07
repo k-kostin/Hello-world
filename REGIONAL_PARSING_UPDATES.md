@@ -74,35 +74,35 @@
 
 ```bash
 # Все 84 региона России
-python regional_parser_final.py --all-regions
+python regional_parser.py --all-regions
 
 # Популярные регионы (Москва, СПб, МО и др.)
-python regional_parser_final.py --popular-regions
+python regional_parser.py --popular-regions
 
 # Конкретные регионы (ID: Москва=77, СПб=78, МО=50)
-python regional_parser_final.py --regions 77 78 50
+python regional_parser.py --regions 77 78 50
 
 # Через основной интерфейс
 python main.py --networks regional_prices
 
 # Показать все доступные регионы с их ID
-python regional_parser_final.py --list-regions
+python regional_parser.py --list-regions
 ```
 
 ### 📊 Дополнительные параметры
 
 ```bash
 # Ограничить количество регионов
-python regional_parser_final.py --all-regions --max-regions 20
+python regional_parser.py --all-regions --max-regions 20
 
 # Настроить задержку между запросами
-python regional_parser_final.py --popular-regions --delay 2.0
+python regional_parser.py --popular-regions --delay 2.0
 
 # Подробное логирование
-python regional_parser_final.py --all-regions --verbose
+python regional_parser.py --all-regions --verbose
 
 # Использовать оркестратор (Excel выход)
-python regional_parser_final.py --popular-regions --use-orchestrator
+python regional_parser.py --popular-regions --use-orchestrator
 ```
 
 ### 🔧 Программное использование
@@ -184,7 +184,7 @@ for result in results:
 
 - **[README.md](README.md)** - обновленная основная документация
 - **[REGIONAL_PARSING_GUIDE.md](REGIONAL_PARSING_GUIDE.md)** - подробное руководство
-- **[regional_parser_final.py](regional_parser_final.py)** - основной скрипт
+- **[regional_parser.py](regional_parser.py)** - основной скрипт
 - **[config.py](config.py)** - конфигурация
 
 ## 🎉 Итог
