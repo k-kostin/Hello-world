@@ -37,16 +37,46 @@ class BaseParser(ABC):
         
         for item in parsed_data:
             try:
+                # Handle latitude with proper type consistency
+                latitude_val = item.get("latitude")
+                if latitude_val is not None:
+                    try:
+                        latitude = float(latitude_val)
+                    except (ValueError, TypeError):
+                        latitude = None
+                else:
+                    latitude = None
+                
+                # Handle longitude with proper type consistency
+                longitude_val = item.get("longitude")
+                if longitude_val is not None:
+                    try:
+                        longitude = float(longitude_val)
+                    except (ValueError, TypeError):
+                        longitude = None
+                else:
+                    longitude = None
+                
+                # Handle price with proper type consistency
+                price_val = item.get("price")
+                if price_val is not None:
+                    try:
+                        price = float(price_val)
+                    except (ValueError, TypeError):
+                        price = None
+                else:
+                    price = None
+                
                 normalized_item = {
                     "station_id": str(item.get("station_id", "")),
                     "network_name": self.network_name,
                     "station_name": str(item.get("station_name", "")),
                     "address": str(item.get("address", "")),
                     "city": str(item.get("city", "")),
-                    "latitude": float(item.get("latitude", 0.0)) if item.get("latitude") else None,
-                    "longitude": float(item.get("longitude", 0.0)) if item.get("longitude") else None,
+                    "latitude": latitude,
+                    "longitude": longitude,
                     "fuel_type": str(item.get("fuel_type", "")),
-                    "price": float(item.get("price", 0.0)) if item.get("price") else None,
+                    "price": price,
                     "currency": str(item.get("currency", "RUB")),
                     "last_updated": datetime.now().isoformat(),
                     "source": str(item.get("source", self.config.get("base_url", "")))
