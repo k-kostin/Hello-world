@@ -191,8 +191,13 @@ class GasStationOrchestrator:
         
         # Объединяем все результаты
         if self.results:
-            combined_df = pl.concat(list(self.results.values()), how="vertical")
-            self._save_combined_data(combined_df)
+            try:
+                combined_df = pl.concat(list(self.results.values()), how="vertical")
+                self._save_combined_data(combined_df)
+            except Exception as e:
+                logger.warning(f"Ошибка при объединении данных: {e}")
+                logger.info("Сохраняем данные каждой сети отдельно")
+                # В случае ошибки объединения, продолжаем с отдельными файлами
             
             logger.info(f"Парсинг завершен за {duration}")
             logger.info(f"Успешно обработано сетей: {len(self.results)}")
@@ -211,10 +216,15 @@ class GasStationOrchestrator:
         if not self.results:
             return {"status": "no_data"}
         
-        combined_df = pl.concat(list(self.results.values()), how="vertical")
+        try:
+            combined_df = pl.concat(list(self.results.values()), how="vertical")
+            total_records = len(combined_df)
+        except Exception as e:
+            logger.warning(f"Ошибка при объединении данных в сводке: {e}")
+            total_records = sum(len(df) for df in self.results.values())
         
         summary = {
-            "total_records": len(combined_df),
+            "total_records": total_records,
             "networks_parsed": len(self.results),
             "networks_failed": len(self.errors),
             "networks_summary": {},
@@ -222,12 +232,22 @@ class GasStationOrchestrator:
         }
         
         for network_name, df in self.results.items():
-            summary["networks_summary"][network_name] = {
-                "records": len(df),
-                "stations": df["station_id"].n_unique(),
-                "cities": df["city"].n_unique(),
-                "fuel_types": df["fuel_type"].n_unique(),
-                "avg_price": df["price"].mean() if len(df) > 0 else 0
-            }
+            try:
+                summary["networks_summary"][network_name] = {
+                    "records": len(df),
+                    "stations": df["station_id"].n_unique(),
+                    "cities": df["city"].n_unique(),
+                    "fuel_types": df["fuel_type"].n_unique(),
+                    "avg_price": df["price"].mean() if len(df) > 0 else 0
+                }
+            except Exception as e:
+                logger.warning(f"Ошибка при создании сводки для {network_name}: {e}")
+                summary["networks_summary"][network_name] = {
+                    "records": len(df),
+                    "stations": 0,
+                    "cities": 0,
+                    "fuel_types": 0,
+                    "avg_price": 0
+                }
         
         return summary
