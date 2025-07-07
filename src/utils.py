@@ -39,18 +39,20 @@ class DataProcessor:
             logger.error("Файлы с объединенными данными не найдены")
             return None
         
-        # Сортируем по дате в названии файла (извлекаем timestamp для корректной сортировки)
+        # Сортируем по дате в названии файла (извлекаем дату из конца имени файла)
         def extract_timestamp(filename):
             try:
-                parts = filename.split("_")
-                if filename.startswith("all_gas_stations_"):
-                    return parts[3] + "_" + parts[4].split(".")[0]
-                elif filename.startswith("gas_stations_") and len(parts) >= 4:
-                    return parts[-2] + "_" + parts[-1].split(".")[0]
-                else:
-                    return "19700101_000000"  # fallback for unknown format
-            except Exception:
-                return "19700101_000000"  # fallback
+                # Извлекаем YYYYMMDD_HHMMSS из конца файла
+                name_parts = filename.replace('.xlsx', '').split('_')
+                # Ищем части, которые выглядят как дата и время
+                if len(name_parts) >= 2:
+                    date_part = name_parts[-2]  # YYYYMMDD
+                    time_part = name_parts[-1]  # HHMMSS
+                    if len(date_part) == 8 and len(time_part) == 6:
+                        return datetime.strptime(f"{date_part}_{time_part}", "%Y%m%d_%H%M%S")
+            except:
+                pass
+            return datetime.min
         
         combined_files.sort(key=extract_timestamp, reverse=True)
         latest_file = combined_files[0]
@@ -216,51 +218,37 @@ class DataProcessor:
         all_files = os.listdir(data_dir)
         
         # Новая схема: all_gas_stations_, gas_stations_ (включая варианты с именами сетей)
-        files = [f for f in all_files if 
+        combined_files = [f for f in all_files if 
                 (f.startswith("all_gas_stations_") or f.startswith("gas_stations_"))
                 and f.endswith(".xlsx")]
         
-        if len(files) < 2:
+        if len(combined_files) < 2:
             logger.warning("Недостаточно исторических данных для анализа трендов")
             return None
         
-        # Сортируем по дате извлеченной из имени файла (хронологически)
-        def extract_timestamp_for_trends(filename):
+        # Функция для извлечения даты из имени файла
+        def extract_timestamp(filename):
             try:
-                parts = filename.split("_")
-                if filename.startswith("all_gas_stations_"):
-                    return parts[3] + "_" + parts[4].split(".")[0]
-                elif filename.startswith("gas_stations_") and len(parts) >= 4:
-                    return parts[-2] + "_" + parts[-1].split(".")[0]
-                else:
-                    return "19700101_000000"  # fallback
-            except Exception:
-                return "19700101_000000"  # fallback
+                # Извлекаем YYYYMMDD_HHMMSS из конца файла
+                name_parts = filename.replace('.xlsx', '').split('_')
+                if len(name_parts) >= 2:
+                    date_part = name_parts[-2]  # YYYYMMDD
+                    time_part = name_parts[-1]  # HHMMSS
+                    if len(date_part) == 8 and len(time_part) == 6:
+                        return datetime.strptime(f"{date_part}_{time_part}", "%Y%m%d_%H%M%S")
+            except:
+                pass
+            return None
         
-        files.sort(key=extract_timestamp_for_trends)  # Сортируем по дате (от старых к новым)
+        # Сортируем файлы по дате
+        file_dates = [(f, extract_timestamp(f)) for f in combined_files]
+        file_dates = [(f, d) for f, d in file_dates if d is not None]
+        file_dates.sort(key=lambda x: x[1])
         
         trends_data = []
         
-        for file in files:
+        for file, file_date in file_dates:
             try:
-                # Извлекаем дату из названия файла (поддерживаем разные форматы)
-                parts = file.split("_")
-                date_str = None
-                
-                if file.startswith("all_gas_stations_") and len(parts) >= 5:
-                    # Формат: all_gas_stations_YYYYMMDD_HHMMSS.xlsx
-                    date_str = parts[3] + "_" + parts[4].split(".")[0]
-                elif file.startswith("gas_stations_") and len(parts) >= 4:
-                    # Формат: gas_stations_[networks_]YYYYMMDD_HHMMSS.xlsx
-                    # Последние два элемента всегда дата и время
-                    date_str = parts[-2] + "_" + parts[-1].split(".")[0]
-                
-                if not date_str:
-                    logger.warning(f"Не удалось извлечь дату из файла: {file}")
-                    continue
-                
-                file_date = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
-                
                 filepath = os.path.join(data_dir, file)
                 df = pl.read_excel(filepath)
                 

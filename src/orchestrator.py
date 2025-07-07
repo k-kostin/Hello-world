@@ -135,13 +135,14 @@ class GasStationOrchestrator:
             
             df_clean.write_excel(filepath)
             
-            # Логируем информацию о сохраненном файле
+            # Улучшенное логирование с информацией о включенных сетях
             if is_all_networks:
                 logger.info(f"Объединенные данные ВСЕХ сетей сохранены в {filepath}")
             else:
-                included_networks = list(self.results.keys())
-                logger.info(f"Объединенные данные выбранных сетей сохранены в {filepath}")
-                logger.info(f"Включенные сети: {', '.join(included_networks)}")
+                networks_list = ", ".join(sorted(requested_networks))
+                logger.info(f"Объединенные данные сетей ({networks_list}) сохранены в {filepath}")
+            
+            logger.info(f"Включенные сети: {len(requested_networks)} из {len(all_available_networks)} доступных")
             
             # Статистика
             stats = (df_clean
