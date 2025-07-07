@@ -3,7 +3,7 @@
 """
 from typing import Dict, Any
 from .base import BaseParser
-from .russiabase_parser import RussiaBaseParser
+from .russiabase_parser import RussiaBaseParser, RussiaBaseRegionalParser
 from .gazprom_parser import GazpromParser
 from .yandex_parser import YandexMapsParser
 from .tatneft_parser import TatneftParser
@@ -14,6 +14,7 @@ class ParserFactory:
     
     _PARSER_MAPPING = {
         "russiabase": RussiaBaseParser,
+        "russiabase_regional": RussiaBaseRegionalParser,
         "api": GazpromParser,
         "selenium": YandexMapsParser,
         "tatneft_api": TatneftParser
