@@ -8,6 +8,7 @@ import re
 import time
 from typing import List, Dict, Tuple, Any
 import sys
+import argparse
 
 # Попытка импорта loguru, если не установлен - используем стандартный logging
 try:
@@ -41,85 +42,115 @@ DEFAULT_HEADERS = {
 class RegionParser:
     """Парсер для получения списка регионов с russiabase.ru"""
     
-    def __init__(self):
+    def __init__(self, timeout: int = 30, retries: int = 3, offline_mode: bool = False):
         self.session = requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
         self.base_url = "https://russiabase.ru/prices"
+        self.timeout = timeout
+        self.retries = retries
+        self.offline_mode = offline_mode
         
     def fetch_regions(self) -> List[Dict[str, Any]]:
         """Получает список всех регионов"""
+        if self.offline_mode:
+            logger.info("Запущен offline режим - используем встроенный список регионов")
+            return self._get_known_regions()
+            
         logger.info("Получение списка регионов с russiabase.ru...")
         
-        try:
-            # Получаем главную страницу с ценами
-            response = self.session.get(self.base_url, timeout=30)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            regions = []
-            
-            # Ищем выпадающий список регионов или ссылки на региональные страницы
-            # Вариант 1: Поиск select с регионами
-            region_select = soup.find('select', {'name': 'region'}) or soup.find('select', id=re.compile(r'region', re.I))
-            
-            if region_select:
-                logger.info("Найден select с регионами")
-                options = region_select.find_all('option')
-                for option in options:
-                    value = option.get('value')
-                    text = option.get_text(strip=True)
-                    
-                    if value and value.isdigit() and text:
-                        regions.append({
-                            'id': int(value),
-                            'name': text,
-                            'url': f"{self.base_url}?region={value}"
-                        })
-            
-            # Вариант 2: Поиск ссылок с параметром region
-            if not regions:
-                logger.info("Ищем ссылки с параметром region...")
-                region_links = soup.find_all('a', href=re.compile(r'region=\d+'))
+        for attempt in range(self.retries):
+            try:
+                # Получаем главную страницу с ценами
+                logger.info(f"Попытка {attempt + 1}/{self.retries} подключения к {self.base_url}")
+                response = self.session.get(self.base_url, timeout=self.timeout)
+                response.raise_for_status()
                 
-                for link in region_links:
-                    href = link.get('href')
-                    text = link.get_text(strip=True)
+                soup = BeautifulSoup(response.text, 'html.parser')
+                regions = []
+                
+                # Ищем выпадающий список регионов или ссылки на региональные страницы
+                # Вариант 1: Поиск select с регионами
+                region_select = soup.find('select', {'name': 'region'}) or soup.find('select', id=re.compile(r'region', re.I))
+                
+                if region_select:
+                    logger.info("Найден select с регионами")
+                    options = region_select.find_all('option')
+                    for option in options:
+                        value = option.get('value')
+                        text = option.get_text(strip=True)
+                        
+                        if value and value.isdigit() and text:
+                            regions.append({
+                                'id': int(value),
+                                'name': text,
+                                'url': f"{self.base_url}?region={value}"
+                            })
+                
+                # Вариант 2: Поиск ссылок с параметром region
+                if not regions:
+                    logger.info("Ищем ссылки с параметром region...")
+                    region_links = soup.find_all('a', href=re.compile(r'region=\d+'))
                     
-                    # Извлекаем ID региона из URL
-                    match = re.search(r'region=(\d+)', href)
-                    if match and text:
-                        region_id = int(match.group(1))
-                        regions.append({
-                            'id': region_id,
-                            'name': text,
-                            'url': f"https://russiabase.ru{href}" if href.startswith('/') else href
-                        })
-            
-            # Вариант 3: Пробуем получить регионы через JavaScript/AJAX endpoint
-            if not regions:
-                logger.info("Пробуем найти AJAX endpoint для регионов...")
-                regions = self._try_ajax_regions()
-            
-            # Вариант 4: Брутфорс известных регионов России
-            if not regions:
-                logger.info("Используем известные регионы России...")
-                regions = self._get_known_regions()
-            
-            # Удаляем дубликаты по ID
-            unique_regions = {}
-            for region in regions:
-                if region['id'] not in unique_regions:
-                    unique_regions[region['id']] = region
+                    for link in region_links:
+                        href = link.get('href')
+                        text = link.get_text(strip=True)
+                        
+                        # Извлекаем ID региона из URL
+                        match = re.search(r'region=(\d+)', href)
+                        if match and text:
+                            region_id = int(match.group(1))
+                            regions.append({
+                                'id': region_id,
+                                'name': text,
+                                'url': f"https://russiabase.ru{href}" if href.startswith('/') else href
+                            })
+                
+                # Вариант 3: Пробуем получить регионы через JavaScript/AJAX endpoint
+                if not regions:
+                    logger.info("Пробуем найти AJAX endpoint для регионов...")
+                    regions = self._try_ajax_regions()
+                
+                # Вариант 4: Используем известные регионы России
+                if not regions:
+                    logger.warning("Не удалось получить регионы с сайта, используем встроенный список...")
+                    regions = self._get_known_regions()
+                
+                # Удаляем дубликаты по ID
+                unique_regions = {}
+                for region in regions:
+                    if region['id'] not in unique_regions:
+                        unique_regions[region['id']] = region
+                        
+                regions = list(unique_regions.values())
+                regions.sort(key=lambda x: x['name'])
+                
+                logger.info(f"Найдено {len(regions)} регионов")
+                return regions
+                
+            except requests.exceptions.Timeout:
+                logger.error(f"Таймаут соединения (попытка {attempt + 1}/{self.retries})")
+                if attempt < self.retries - 1:
+                    wait_time = (attempt + 1) * 5
+                    logger.info(f"Ждем {wait_time} секунд перед следующей попыткой...")
+                    time.sleep(wait_time)
                     
-            regions = list(unique_regions.values())
-            regions.sort(key=lambda x: x['name'])
-            
-            logger.info(f"Найдено {len(regions)} регионов")
-            return regions
-            
-        except Exception as e:
-            logger.error(f"Ошибка при получении регионов: {e}")
-            return []
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"Ошибка соединения: {e} (попытка {attempt + 1}/{self.retries})")
+                if attempt < self.retries - 1:
+                    wait_time = (attempt + 1) * 5
+                    logger.info(f"Ждем {wait_time} секунд перед следующей попыткой...")
+                    time.sleep(wait_time)
+                    
+            except Exception as e:
+                logger.error(f"Неожиданная ошибка: {e} (попытка {attempt + 1}/{self.retries})")
+                if attempt < self.retries - 1:
+                    wait_time = (attempt + 1) * 5
+                    logger.info(f"Ждем {wait_time} секунд перед следующей попыткой...")
+                    time.sleep(wait_time)
+        
+        # Если все попытки неудачны, используем встроенные регионы
+        logger.warning("Все попытки получить регионы с сайта неудачны. Используем встроенный список.")
+        return self._get_known_regions()
     
     def _try_ajax_regions(self) -> List[Dict[str, Any]]:
         """Пытается получить регионы через AJAX запросы"""
@@ -148,6 +179,8 @@ class RegionParser:
     
     def _get_known_regions(self) -> List[Dict[str, Any]]:
         """Возвращает список известных регионов России с их предполагаемыми ID"""
+        logger.info("Используем полный список российских регионов...")
+        
         known_regions = [
             (1, "Республика Адыгея"),
             (2, "Республика Алтай"),
@@ -236,42 +269,16 @@ class RegionParser:
             (85, "Севастополь")
         ]
         
-        # Проверим реальность некоторых ID, делая запросы
-        verified_regions = []
-        logger.info("Проверяем доступность регионов...")
+        # Конвертируем в нужный формат
+        regions = []
+        for region_id, region_name in known_regions:
+            regions.append({
+                'id': region_id,
+                'name': region_name,
+                'url': f"{self.base_url}?region={region_id}"
+            })
         
-        for region_id, region_name in known_regions[:10]:  # Проверим первые 10 для экономии времени
-            try:
-                url = f"{self.base_url}?region={region_id}"
-                response = self.session.get(url, timeout=5)
-                
-                if response.status_code == 200 and "Цены на бензин" in response.text:
-                    verified_regions.append({
-                        'id': region_id,
-                        'name': region_name,
-                        'url': url
-                    })
-                    logger.debug(f"Регион {region_name} (ID: {region_id}) подтвержден")
-                else:
-                    logger.debug(f"Регион {region_name} (ID: {region_id}) недоступен")
-                    
-                time.sleep(1)  # Задержка между запросами
-                
-            except Exception as e:
-                logger.debug(f"Ошибка проверки региона {region_name}: {e}")
-                continue
-        
-        # Если проверили хотя бы один регион, добавляем остальные без проверки
-        if verified_regions:
-            for region_id, region_name in known_regions:
-                if region_id not in [r['id'] for r in verified_regions]:
-                    verified_regions.append({
-                        'id': region_id,
-                        'name': region_name,
-                        'url': f"{self.base_url}?region={region_id}"
-                    })
-        
-        return verified_regions
+        return regions
     
     def save_to_markdown(self, regions: List[Dict[str, Any]], filename: str = "regions.md"):
         """Сохраняет список регионов в markdown файл"""
@@ -320,30 +327,149 @@ url = f"{{base_url}}?region={{region_id}}"
             
         content += "]\n```\n"
         
+        # Добавляем информацию о проблемах с сетью
+        content += f"""
+## Примечания
+
+- Если сайт russiabase.ru недоступен, скрипт автоматически использует встроенный список регионов
+- Для работы в offline режиме используйте флаг `--offline`
+- При проблемах с сетью попробуйте увеличить timeout с помощью `--timeout`
+
+## Устранение неполадок
+
+### Проблемы с подключением
+```bash
+# Увеличить timeout до 60 секунд
+python generate_regions.py --timeout 60
+
+# Использовать offline режим
+python generate_regions.py --offline
+
+# Больше попыток подключения
+python generate_regions.py --retries 5
+```
+
+### Возможные причины ошибок подключения
+- Блокировка сайта провайдером
+- Временная недоступность russiabase.ru
+- Проблемы с DNS
+- Необходимость использования VPN/прокси
+"""
+        
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(content)
         
         logger.info(f"Регионы сохранены в файл {filename}")
 
 
+def parse_arguments():
+    """Парсинг аргументов командной строки"""
+    parser = argparse.ArgumentParser(
+        description="Генератор таблицы регионов России для russiabase.ru",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Примеры использования:
+  python generate_regions.py                    # Обычный режим
+  python generate_regions.py --offline          # Offline режим (встроенный список)
+  python generate_regions.py --timeout 60       # Увеличенный timeout
+  python generate_regions.py --retries 5        # Больше попыток
+  python generate_regions.py --output my_regions.md  # Другой файл вывода
+        """
+    )
+    
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=30,
+        help="Timeout для HTTP запросов в секундах (по умолчанию 30)"
+    )
+    
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=3,
+        help="Количество попыток подключения (по умолчанию 3)"
+    )
+    
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Offline режим - использовать только встроенный список регионов"
+    )
+    
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="regions.md",
+        help="Имя выходного файла (по умолчанию regions.md)"
+    )
+    
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Подробное логирование"
+    )
+    
+    return parser.parse_args()
+
+
 def main():
     """Главная функция"""
+    args = parse_arguments()
+    
+    # Настройка уровня логирования
+    if args.verbose and LOGURU_AVAILABLE:
+        logger.remove()
+        logger.add(
+            sys.stdout,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}",
+            level="DEBUG"
+        )
+    
     logger.info("Запуск генератора таблицы регионов")
     
-    parser = RegionParser()
-    regions = parser.fetch_regions()
-    
-    if regions:
-        parser.save_to_markdown(regions, "regions.md")
-        
-        # Краткая статистика
-        print(f"\n✅ Успешно сгенерирована таблица регионов:")
-        print(f"   📊 Всего регионов: {len(regions)}")
-        print(f"   📁 Файл: regions.md")
-        print(f"   🔗 Пример URL: {regions[0]['url'] if regions else 'N/A'}")
-        
+    if args.offline:
+        logger.info("🌐 Offline режим включен")
     else:
-        logger.error("Не удалось получить список регионов")
+        logger.info(f"🌐 Online режим: timeout={args.timeout}s, retries={args.retries}")
+    
+    parser = RegionParser(
+        timeout=args.timeout,
+        retries=args.retries,
+        offline_mode=args.offline
+    )
+    
+    try:
+        regions = parser.fetch_regions()
+        
+        if regions:
+            parser.save_to_markdown(regions, args.output)
+            
+            # Краткая статистика
+            print(f"\n✅ Успешно сгенерирована таблица регионов:")
+            print(f"   📊 Всего регионов: {len(regions)}")
+            print(f"   📁 Файл: {args.output}")
+            print(f"   🔗 Пример URL: {regions[0]['url'] if regions else 'N/A'}")
+            
+            # Дополнительная информация для пользователя
+            if args.offline:
+                print(f"   ℹ️  Использован встроенный список регионов")
+            else:
+                print(f"   ℹ️  При проблемах с сетью используйте --offline")
+            
+        else:
+            logger.error("Не удалось получить список регионов")
+            print(f"\n❌ Ошибка генерации таблицы регионов")
+            print(f"   💡 Попробуйте: python generate_regions.py --offline")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        logger.warning("Генерация прервана пользователем")
+        sys.exit(130)
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
+        print(f"\n❌ Критическая ошибка: {e}")
+        print(f"   💡 Попробуйте offline режим: python generate_regions.py --offline")
         sys.exit(1)
 
 
