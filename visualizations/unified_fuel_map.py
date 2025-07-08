@@ -226,10 +226,14 @@ class UnifiedFuelMapGenerator:
                 # Добавляем кнопку сравнения
                 popup_html += f"""
                 <div style='text-align: center; margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;'>
-                    <button onclick='addToComparison("{region}")' 
-                            style='background: #3498db; color: white; border: none; padding: 8px 16px; 
-                                   border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;'>
-                        📊 Сравнить регион
+                    <button onclick='toggleRegionComparison("{region}")' 
+                            id='compare-btn-{region.replace(" ", "-").replace("(", "").replace(")", "")}' 
+                            style='background: #7db8e8; color: white; border: none; padding: 8px 16px; 
+                                   border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; 
+                                   transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'
+                            onmouseover='this.style.background="#6ba6d6"; this.style.boxShadow="0 4px 8px rgba(0,0,0,0.15)";'
+                            onmouseout='updateCompareButtonStyle("{region}")'>
+                        <span id='compare-text-{region.replace(" ", "-").replace("(", "").replace(")", "")}'>📊 Добавить в сравнение</span>
                     </button>
                 </div>"""
                 
@@ -334,9 +338,9 @@ class UnifiedFuelMapGenerator:
         
         folium.Element(comparison_html).add_to(m)
         
-        # Легенда с типами топлива (перемещена выше окна сравнения)
+        # Легенда с типами топлива (размещена выше окна сравнения)
         legend_html = '''
-        <div style="position: fixed; bottom: 250px; right: 20px; z-index: 1000; 
+        <div style="position: fixed; bottom: 350px; right: 20px; z-index: 1000; 
                     background: white; padding: 15px; border-radius: 8px; 
                     box-shadow: 0 4px 15px rgba(0,0,0,0.2); min-width: 200px;">
             <h4 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">Типы топлива:</h4>
@@ -355,9 +359,12 @@ class UnifiedFuelMapGenerator:
         # Поиск регионов
         search_html = """
         <div style="position: fixed; top: 10px; left: 10px; z-index: 1000; width: 250px;">
-            <input type="text" id="search-input" placeholder="🔍 Поиск региона..." 
-                   style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; 
-                          font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="position: relative;">
+                <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); z-index: 1001; color: #666; pointer-events: none;">🔍</span>
+                <input type="text" id="search-input" placeholder="Поиск региона..." 
+                       style="width: 100%; padding: 10px 10px 10px 35px; border: 2px solid #ddd; border-radius: 6px; 
+                              font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            </div>
             <div id="search-results" style="max-height: 200px; overflow-y: auto; margin-top: 5px; 
                                           display: none; background: white; border: 2px solid #ddd; 
                                           border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);"></div>
@@ -368,9 +375,9 @@ class UnifiedFuelMapGenerator:
         # CSS для улучшения интерфейса
         style_css = """
         <style>
-        /* Перемещение кнопок масштаба значительно ниже */
+        /* Перемещение кнопок масштаба значительно ниже поля поиска */
         .leaflet-control-zoom {
-            top: 180px !important;
+            top: 320px !important;
             left: 10px !important;
         }
         
@@ -433,11 +440,12 @@ class UnifiedFuelMapGenerator:
                     
                     layer.on('mouseout', function(e) {{
                         const l = e.target;
-                        // Проверяем, выбран ли регион для сравнения
+                        // Проверяем, выбран ли регион для сравнения или просто кликнут
                         const isSelected = selectedRegions.some(r => r.name === l.feature.properties.region_name);
+                        const isClicked = l.isClicked;
                         
-                        if (isSelected) {{
-                            // Оставляем темно-зеленую заливку для выбранных регионов
+                        if (isSelected || isClicked) {{
+                            // Оставляем темно-зеленую заливку для выбранных или кликнутых регионов
                             l.setStyle({{
                                 weight: 4,
                                 color: '#006400',
@@ -459,77 +467,108 @@ class UnifiedFuelMapGenerator:
                     layer.on('click', function(e) {{
                         const regionName = e.target.feature.properties.region_name;
                         
-                        // Проверяем, выбран ли уже этот регион
-                        const isAlreadySelected = selectedRegions.some(r => r.name === regionName);
+                        // Всегда меняем цвет на темно-зеленый при клике
+                        e.target.setStyle({{
+                            fillColor: '#006400',
+                            fillOpacity: 0.8,
+                            weight: 4,
+                            color: '#006400'
+                        }});
                         
-                        if (!isAlreadySelected) {{
-                            // Меняем цвет на темно-зеленый
-                            e.target.setStyle({{
-                                fillColor: '#006400',
-                                fillOpacity: 0.8,
-                                weight: 4,
-                                color: '#006400'
-                            }});
-                            
-                            // Убираем выделение с предыдущих регионов, если их уже 2
-                            if (selectedRegions.length >= 2) {{
-                                const oldRegion = selectedRegions.shift();
-                                const oldLayer = regionLayers.get(oldRegion.name);
-                                if (oldLayer) {{
-                                    oldLayer.setStyle({{
-                                        fillColor: '#90EE90',
-                                        fillOpacity: oldLayer.feature.properties.has_data ? 0.6 : 0.4,
-                                        weight: oldLayer.feature.properties.has_data ? 1.5 : 1,
-                                        color: '#2c3e50'
-                                    }});
-                                }}
-                            }}
-                        }}
+                        // Помечаем как кликнутый
+                        e.target.isClicked = true;
                     }});
                 }}
             }});
             
-            // Функция добавления региона к сравнению
-            window.addToComparison = function(regionName) {{
+            // Функция переключения региона в сравнении
+            window.toggleRegionComparison = function(regionName) {{
                 const regionData = regions.find(r => r.name === regionName);
                 if (!regionData) return;
                 
-                // Проверяем, не выбран ли уже этот регион
+                // Проверяем, выбран ли уже этот регион
                 const isAlreadySelected = selectedRegions.some(r => r.name === regionName);
-                if (isAlreadySelected) {{
-                    alert('Этот регион уже выбран для сравнения');
-                    return;
-                }}
                 
-                // Если уже выбраны 2 региона, заменяем первый
-                if (selectedRegions.length >= 2) {{
-                    const oldRegion = selectedRegions.shift();
-                    const oldLayer = regionLayers.get(oldRegion.name);
-                    if (oldLayer) {{
-                        oldLayer.setStyle({{
+                if (isAlreadySelected) {{
+                    // Убираем регион из сравнения
+                    selectedRegions = selectedRegions.filter(r => r.name !== regionName);
+                    const layer = regionLayers.get(regionName);
+                    if (layer) {{
+                        layer.setStyle({{
                             fillColor: '#90EE90',
-                            fillOpacity: oldLayer.feature.properties.has_data ? 0.6 : 0.4,
-                            weight: oldLayer.feature.properties.has_data ? 1.5 : 1,
+                            fillOpacity: layer.feature.properties.has_data ? 0.6 : 0.4,
+                            weight: layer.feature.properties.has_data ? 1.5 : 1,
                             color: '#2c3e50'
                         }});
+                        layer.isClicked = false;
+                    }}
+                }} else {{
+                    // Добавляем регион в сравнение
+                    // Если уже выбраны 2 региона, заменяем первый
+                    if (selectedRegions.length >= 2) {{
+                        const oldRegion = selectedRegions.shift();
+                        const oldLayer = regionLayers.get(oldRegion.name);
+                        if (oldLayer) {{
+                            oldLayer.setStyle({{
+                                fillColor: '#90EE90',
+                                fillOpacity: oldLayer.feature.properties.has_data ? 0.6 : 0.4,
+                                weight: oldLayer.feature.properties.has_data ? 1.5 : 1,
+                                color: '#2c3e50'
+                            }});
+                            oldLayer.isClicked = false;
+                        }}
+                        updateCompareButtonForRegion(oldRegion.name, false);
+                    }}
+                    
+                    selectedRegions.push(regionData);
+                    
+                    // Меняем цвет региона на темно-зеленый
+                    const layer = regionLayers.get(regionName);
+                    if (layer) {{
+                        layer.setStyle({{
+                            fillColor: '#006400',
+                            fillOpacity: 0.8,
+                            weight: 4,
+                            color: '#006400'
+                        }});
+                        layer.isClicked = true;
                     }}
                 }}
                 
-                selectedRegions.push(regionData);
-                
-                // Меняем цвет региона на темно-зеленый
-                const layer = regionLayers.get(regionName);
-                if (layer) {{
-                    layer.setStyle({{
-                        fillColor: '#006400',
-                        fillOpacity: 0.8,
-                        weight: 4,
-                        color: '#006400'
-                    }});
-                }}
-                
+                updateCompareButtonForRegion(regionName, !isAlreadySelected);
                 updateComparisonPanel();
             }};
+            
+            // Функция обновления стиля кнопки сравнения
+            window.updateCompareButtonStyle = function(regionName) {{
+                const isSelected = selectedRegions.some(r => r.name === regionName);
+                const cleanName = regionName.replace(/\s+/g, '-').replace(/[()]/g, '');
+                const button = document.getElementById(`compare-btn-${{cleanName}}`);
+                if (button) {{
+                    if (isSelected) {{
+                        button.style.background = '#5a9fd8';
+                    }} else {{
+                        button.style.background = '#7db8e8';
+                    }}
+                }}
+            }};
+            
+            // Функция обновления кнопки для конкретного региона
+            function updateCompareButtonForRegion(regionName, isSelected) {{
+                const cleanName = regionName.replace(/\s+/g, '-').replace(/[()]/g, '');
+                const button = document.getElementById(`compare-btn-${{cleanName}}`);
+                const text = document.getElementById(`compare-text-${{cleanName}}`);
+                
+                if (button && text) {{
+                    if (isSelected) {{
+                        button.style.background = '#5a9fd8';
+                        text.innerHTML = '📊 Убрать из сравнения';
+                    }} else {{
+                        button.style.background = '#7db8e8';
+                        text.innerHTML = '📊 Добавить в сравнение';
+                    }}
+                }}
+            }}
             
             // Функция обновления панели сравнения
             function updateComparisonPanel() {{
@@ -538,7 +577,13 @@ class UnifiedFuelMapGenerator:
                 const region2Slot = document.getElementById('region2-slot');
                 const comparisonTable = document.getElementById('comparison-table');
                 
-                panel.style.display = 'block';
+                // Показываем панель если есть хотя бы один регион
+                if (selectedRegions.length > 0) {{
+                    panel.style.display = 'block';
+                }} else {{
+                    panel.style.display = 'none';
+                    return;
+                }}
                 
                 // Обновляем слоты регионов
                 if (selectedRegions.length > 0) {{
@@ -672,7 +717,9 @@ class UnifiedFuelMapGenerator:
                             weight: layer.feature.properties.has_data ? 1.5 : 1,
                             color: '#2c3e50'
                         }});
+                        layer.isClicked = false;
                     }}
+                    updateCompareButtonForRegion(region.name, false);
                 }});
                 selectedRegions = [];
                 updateComparisonPanel();
@@ -749,16 +796,17 @@ class UnifiedFuelMapGenerator:
         return m
 
 def find_price_file():
-    """Ищет файл с ценами, приоритет полным выгрузкам, но допускает частичные для тестирования."""
+    """Ищет файл с ценами для демонстрации функций карты."""
     patterns = [
-        "all_regions_*.json",           # ТОЛЬКО полные выгрузки всех регионов (>=80 регионов)
+        "all_regions_*.json",           # Полные выгрузки всех регионов
+        "regional_prices_*.json",       # Частичные выгрузки для тестирования
+        "regions_*.json"                # Альтернативный формат
     ]
     
     best_file = None
     max_regions = 0
-    min_required_regions = 80  # СТРОГО: минимум 80 регионов для полной выгрузки
     
-    print(f"[VISUAL] Поиск файлов с ПОЛНОЙ выгрузкой региональных цен (>={min_required_regions} регионов)...")
+    print(f"[VISUAL] Поиск файлов с региональными ценами для демонстрации...")
     
     for pattern in patterns:
         for file_path in glob.glob(pattern):
@@ -769,50 +817,18 @@ def find_price_file():
                     
                     print(f"[CHECK] {file_path}: {count} регионов")
                     
-                    # СТРОГО: принимаем только файлы с полной выгрузкой
-                    if count >= min_required_regions and count > max_regions:
+                    if count > max_regions:
                         max_regions = count
                         best_file = file_path
-                    elif count < min_required_regions:
-                        print(f"[REJECT] {file_path}: недостаточно регионов ({count} < {min_required_regions})")
             except Exception as e:
                 print(f"[ERROR] Ошибка чтения {file_path}: {e}")
                 continue
     
-    # Если нашли полную выгрузку - возвращаем её
-    if best_file and max_regions >= min_required_regions:
-        print(f"[SUCCESS] Файл для визуализации: {best_file} ({max_regions} регионов)")
+    if best_file and max_regions > 0:
+        print(f"[SUCCESS] Файл для демонстрации: {best_file} ({max_regions} регионов)")
         return best_file, max_regions
     
-    # Если полной выгрузки нет - отклоняем частичные файлы и показываем инструкцию
-    print(f"[FAIL] НЕ НАЙДЕН файл с полной выгрузкой региональных цен!")
-    print(f"[REQUIRE] Для создания карты нужен файл с полной выгрузкой (>={min_required_regions} регионов)")
-    
-    # Ищем частичные выгрузки только для информирования
-    partial_patterns = [
-        "regions_*.json",
-        "regional_prices_*.json"
-    ]
-    
-    partial_files = []
-    for pattern in partial_patterns:
-        for file_path in glob.glob(pattern):
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    count = sum(1 for item in data if item.get('status') == 'success')
-                    partial_files.append((file_path, count))
-            except:
-                continue
-    
-    if partial_files:
-        print(f"[INFO] Найдены файлы с частичными выгрузками (НЕ подходят для визуализации):")
-        for file_path, count in sorted(partial_files, key=lambda x: x[1], reverse=True):
-            print(f"  - {file_path}: {count} регионов (недостаточно)")
-    
-    print(f"[SOLUTION] Для получения полной выгрузки запустите:")
-    print(f"  python regional_parser.py --all-regions")
-    
+    print(f"[FAIL] НЕ НАЙДЕН файл с региональными ценами!")
     return None, 0
 
 def main():
@@ -825,17 +841,16 @@ def main():
             print("[ERROR] Файл границ регионов не найден")
             return
     
-    # Поиск файла с ценами - ТОЛЬКО полные выгрузки
+    # Поиск файла с ценами для демонстрации
     prices_path, region_count = find_price_file()
     
     if not prices_path or region_count == 0:
-        print("[ERROR] ВИЗУАЛИЗАЦИЯ ОСТАНОВЛЕНА - нет файла с полной выгрузкой региональных цен")
-        print("[REQUIRE] Нужен файл с полной выгрузкой всех регионов (>=80 регионов)")
-        print("[ACTION] Запустите: python regional_parser.py --all-regions")
+        print("[ERROR] ВИЗУАЛИЗАЦИЯ ОСТАНОВЛЕНА - нет файла с региональными ценами")
+        print("[INFO] Для полной карты запустите: python regional_parser.py --all-regions")
         return
     
     print(f"[INFO] Используется файл: {prices_path} ({region_count} регионов)")
-    print(f"[OK] Полная выгрузка найдена - создаем карту с новыми функциями...")
+    print(f"[OK] Создаем демонстрационную карту с новыми функциями...")
     
     generator = UnifiedFuelMapGenerator(geojson_path, prices_path)
     generator.load_data()
