@@ -2,6 +2,7 @@
 """
 Упрощенная карта с ценами на топливо - вся информация в одном попапе.
 Убирает сложность слоев и показывает все виды топлива при клике на регион.
+Включает режим сравнения двух регионов.
 """
 
 import json
@@ -104,7 +105,78 @@ class UnifiedFuelMapGenerator:
                 return prices
         
         return None
-    
+        
+    def create_comparison_table_html(self, region1_data, region2_data):
+        """Создает HTML таблицу для сравнения двух регионов."""
+        if not region1_data or not region2_data:
+            return ""
+            
+        # Собираем все виды топлива из обоих регионов
+        all_fuels = set()
+        if region1_data.get('prices'):
+            all_fuels.update(region1_data['prices'].keys())
+        if region2_data.get('prices'):
+            all_fuels.update(region2_data['prices'].keys())
+        
+        # Сортировка топлива по приоритету
+        fuel_order = ["АИ-92", "АИ-92+", "АИ-95", "АИ-95+", "АИ-98", "АИ-100", "АИ-100+", "ДТ", "ДТ+", "Газ", "Пропан"]
+        sorted_fuels = [f for f in fuel_order if f in all_fuels]
+        
+        table_html = "<table style='width: 100%; border-collapse: collapse; font-size: 12px;'>"
+        table_html += "<tr style='background: #f8f9fa;'>"
+        table_html += "<th style='padding: 8px; border: 1px solid #ddd; text-align: left;'>Топливо</th>"
+        table_html += f"<th style='padding: 8px; border: 1px solid #ddd; text-align: center;'>{region1_data['name']}</th>"
+        table_html += f"<th style='padding: 8px; border: 1px solid #ddd; text-align: center;'>{region2_data['name']}</th>"
+        table_html += "<th style='padding: 8px; border: 1px solid #ddd; text-align: center;'>Разница</th>"
+        table_html += "</tr>"
+        
+        for fuel_type in sorted_fuels:
+            display_name = self.fuel_display_names.get(fuel_type, fuel_type)
+            color = self.fuel_colors.get(fuel_type, "#666")
+            
+            price1 = region1_data.get('prices', {}).get(fuel_type)
+            price2 = region2_data.get('prices', {}).get(fuel_type)
+            
+            # Определяем единицы измерения
+            if fuel_type == "Газ":
+                unit = "руб/м³"
+            elif fuel_type == "Пропан":
+                unit = "руб/кг"
+            else:
+                unit = "руб/л"
+            
+            # Ячейка с ценой 1
+            price1_cell = f"{price1:.2f} {unit}" if price1 else "—"
+            price2_cell = f"{price2:.2f} {unit}" if price2 else "—"
+            
+            # Вычисляем разницу
+            diff_cell = "—"
+            diff_style = ""
+            if price1 and price2:
+                diff = price2 - price1
+                if abs(diff) < 0.01:
+                    diff_cell = "≈ 0"
+                    diff_style = "color: #6c757d;"
+                elif diff > 0:
+                    diff_cell = f"+{diff:.2f}"
+                    diff_style = "color: #dc3545; font-weight: bold;"
+                else:
+                    diff_cell = f"{diff:.2f}"
+                    diff_style = "color: #28a745; font-weight: bold;"
+            
+            table_html += f"""
+            <tr>
+                <td style='padding: 6px 8px; border: 1px solid #ddd;'>
+                    <span style='color: {color}; margin-right: 6px;'>●</span>{display_name}
+                </td>
+                <td style='padding: 6px 8px; border: 1px solid #ddd; text-align: center;'>{price1_cell}</td>
+                <td style='padding: 6px 8px; border: 1px solid #ddd; text-align: center;'>{price2_cell}</td>
+                <td style='padding: 6px 8px; border: 1px solid #ddd; text-align: center; {diff_style}'>{diff_cell}</td>
+            </tr>"""
+        
+        table_html += "</table>"
+        return table_html
+
     def create_map(self, output_path: str = "unified_fuel_map.html"):
         """Создает единую карту."""
         m = folium.Map(location=[61, 105], zoom_start=3, tiles='OpenStreetMap')
@@ -118,7 +190,7 @@ class UnifiedFuelMapGenerator:
             region_prices = self.find_region_prices(region)
             
             if region_prices:
-                # Создание подробного попапа
+                # Создание подробного попапа с кнопкой сравнения
                 popup_html = f"<div style='font-family: Arial; min-width: 300px; max-width: 400px;'>"
                 popup_html += f"<h3 style='color: #2c3e50; margin: 0 0 15px 0; text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 8px;'>{region}</h3>"
                 popup_html += "<table style='width: 100%; border-collapse: collapse;'>"
@@ -150,16 +222,26 @@ class UnifiedFuelMapGenerator:
                     </tr>"""
                 
                 popup_html += "</table>"
+                
+                # Добавляем кнопку сравнения
+                popup_html += f"""
+                <div style='text-align: center; margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;'>
+                    <button onclick='addToComparison("{region}")' 
+                            style='background: #3498db; color: white; border: none; padding: 8px 16px; 
+                                   border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;'>
+                        📊 Сравнить регион
+                    </button>
+                </div>"""
+                
                 popup_html += "</div>"
                 
-                # Цвет региона по основному топливу (АИ-92 приоритет)
-                main_fuel = "АИ-92" if "АИ-92" in region_prices else sorted_fuels[0][0]
-                base_color = self.fuel_colors.get(main_fuel, "#3498db")
-                
+                # Цвет региона - базовая светло-зеленая заливка
                 props["popup_html"] = popup_html
-                props["base_color"] = base_color
+                props["base_color"] = "#90EE90"  # Светло-зеленый для всех регионов с данными
                 props["has_data"] = True
                 props["fuel_count"] = len(sorted_fuels)
+                props["region_name"] = region
+                props["fuel_prices"] = region_prices
             else:
                 popup_html = f"<div style='text-align: center; padding: 20px; font-family: Arial;'>"
                 popup_html += f"<h3 style='color: #e74c3c; margin: 0 0 10px 0;'>{region}</h3>"
@@ -168,33 +250,23 @@ class UnifiedFuelMapGenerator:
                 popup_html += "</div>"
                 
                 props["popup_html"] = popup_html
-                props["base_color"] = "#bdc3c7"
+                props["base_color"] = "#90EE90"  # Светло-зеленый и для регионов без данных (включая Магадан)
                 props["has_data"] = False
                 props["fuel_count"] = 0
+                props["region_name"] = region
+                props["fuel_prices"] = {}
         
-        # Стили для регионов
+        # Стили для регионов - все получают светло-зеленую заливку
         def style_function(feature):
             has_data = feature["properties"].get("has_data", False)
-            color = feature["properties"].get("base_color", "#bdc3c7")
-            fuel_count = feature["properties"].get("fuel_count", 0)
             
-            if has_data:
-                # Чем больше видов топлива, тем ярче
-                opacity = min(0.8, 0.4 + (fuel_count * 0.05))
-                return {
-                    "fillColor": color,
-                    "color": "#2c3e50",
-                    "weight": 1.5,
-                    "fillOpacity": opacity
-                }
-            else:
-                # Базовая заливка для всех регионов без данных
-                return {
-                    "fillColor": "#e8f4f8",
-                    "color": "#2c3e50",
-                    "weight": 1,
-                    "fillOpacity": 0.4
-                }
+            # Все регионы получают одинаковую светло-зеленую заливку
+            return {
+                "fillColor": "#90EE90",  # Светло-зеленый для всех
+                "color": "#2c3e50",
+                "weight": 1.5 if has_data else 1,
+                "fillOpacity": 0.6 if has_data else 0.4
+            }
         
         # Добавление слоя
         folium.GeoJson(
@@ -221,15 +293,50 @@ class UnifiedFuelMapGenerator:
                 🗺️ Цены на топливо по регионам России
             </h2>
             <p style="margin: 0; color: #7f8c8d; font-size: 14px;">
-                Кликните на регион для просмотра всех цен на топливо
+                Кликните на регион для просмотра цен • Режим сравнения регионов
             </p>
         </div>'''
         
         folium.Element(header_html).add_to(m)
         
-        # Легенда с типами топлива
+        # Окно сравнения регионов
+        comparison_html = '''
+        <div id="comparison-panel" style="position: fixed; bottom: 20px; right: 20px; z-index: 1000; 
+                                         background: white; padding: 15px; border-radius: 8px; 
+                                         box-shadow: 0 4px 15px rgba(0,0,0,0.2); min-width: 400px; max-width: 500px; 
+                                         display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h4 style="margin: 0; color: #2c3e50; font-size: 16px;">📊 Сравнение регионов</h4>
+                <button onclick="closeComparison()" style="background: #e74c3c; color: white; border: none; 
+                                                           padding: 4px 8px; border-radius: 3px; cursor: pointer;">✕</button>
+            </div>
+            <div id="comparison-content">
+                <div style="margin-bottom: 10px; color: #7f8c8d; font-size: 14px;">
+                    Выберите два региона для сравнения цен на топливо
+                </div>
+                <div id="selected-regions" style="margin-bottom: 15px;">
+                    <div id="region1-slot" style="padding: 8px; border: 2px dashed #ddd; border-radius: 4px; margin-bottom: 8px; color: #999;">
+                        Регион 1: не выбран
+                    </div>
+                    <div id="region2-slot" style="padding: 8px; border: 2px dashed #ddd; border-radius: 4px; color: #999;">
+                        Регион 2: не выбран
+                    </div>
+                </div>
+                <div id="comparison-table"></div>
+                <div style="text-align: center; margin-top: 10px;">
+                    <button onclick="clearComparison()" style="background: #6c757d; color: white; border: none; 
+                                                              padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                        Очистить выбор
+                    </button>
+                </div>
+            </div>
+        </div>'''
+        
+        folium.Element(comparison_html).add_to(m)
+        
+        # Легенда с типами топлива (перемещена выше окна сравнения)
         legend_html = '''
-        <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000; 
+        <div style="position: fixed; bottom: 250px; right: 20px; z-index: 1000; 
                     background: white; padding: 15px; border-radius: 8px; 
                     box-shadow: 0 4px 15px rgba(0,0,0,0.2); min-width: 200px;">
             <h4 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 16px;">Типы топлива:</h4>
@@ -261,9 +368,9 @@ class UnifiedFuelMapGenerator:
         # CSS для улучшения интерфейса
         style_css = """
         <style>
-        /* Перемещение кнопок масштаба ниже */
+        /* Перемещение кнопок масштаба значительно ниже */
         .leaflet-control-zoom {
-            top: 120px !important;
+            top: 180px !important;
             left: 10px !important;
         }
         
@@ -278,26 +385,40 @@ class UnifiedFuelMapGenerator:
             border: 1px solid #ccc !important;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
         }
+        
+        /* Стили для выделенного региона */
+        .region-selected {
+            stroke: #006400 !important;
+            stroke-width: 4 !important;
+            fill: #006400 !important;
+            fill-opacity: 0.8 !important;
+        }
         </style>
         """
         m.get_root().html.add_child(Element(style_css))
 
-        # JavaScript для поиска и интерактивности
+        # JavaScript для поиска, интерактивности и сравнения
         map_var = m.get_name()
         js_code = f"""
         <script>
         setTimeout(function() {{
             const map = {map_var};
+            let selectedRegions = [];
+            let regionLayers = new Map();
             
             // Собираем все регионы
             const regions = [];
             map.eachLayer(layer => {{
                 if (layer.feature && layer.feature.properties && layer.feature.properties.name) {{
+                    const regionName = layer.feature.properties.name;
                     regions.push({{
-                        name: layer.feature.properties.name,
+                        name: regionName,
                         layer: layer,
-                        hasData: layer.feature.properties.has_data
+                        hasData: layer.feature.properties.has_data,
+                        prices: layer.feature.properties.fuel_prices || {{}}
                     }});
+                    
+                    regionLayers.set(regionName, layer);
                     
                     // Hover эффекты
                     layer.on('mouseover', function(e) {{
@@ -312,19 +433,250 @@ class UnifiedFuelMapGenerator:
                     
                     layer.on('mouseout', function(e) {{
                         const l = e.target;
-                        const hasData = l.feature.properties.has_data;
-                        const color = l.feature.properties.base_color || '#e8f4f8';
-                        const fuelCount = l.feature.properties.fuel_count || 0;
-                        const opacity = hasData ? Math.min(0.8, 0.4 + (fuelCount * 0.05)) : 0.4;
+                        // Проверяем, выбран ли регион для сравнения
+                        const isSelected = selectedRegions.some(r => r.name === l.feature.properties.region_name);
                         
-                        l.setStyle({{
-                            weight: hasData ? 1.5 : 1,
-                            color: '#2c3e50',
-                            fillOpacity: opacity
-                        }});
+                        if (isSelected) {{
+                            // Оставляем темно-зеленую заливку для выбранных регионов
+                            l.setStyle({{
+                                weight: 4,
+                                color: '#006400',
+                                fillColor: '#006400',
+                                fillOpacity: 0.8
+                            }});
+                        }} else {{
+                            // Возвращаем обычную светло-зеленую заливку
+                            l.setStyle({{
+                                weight: l.feature.properties.has_data ? 1.5 : 1,
+                                color: '#2c3e50',
+                                fillColor: '#90EE90',
+                                fillOpacity: l.feature.properties.has_data ? 0.6 : 0.4
+                            }});
+                        }}
+                    }});
+                    
+                    // Обработчик клика для выделения региона
+                    layer.on('click', function(e) {{
+                        const regionName = e.target.feature.properties.region_name;
+                        
+                        // Проверяем, выбран ли уже этот регион
+                        const isAlreadySelected = selectedRegions.some(r => r.name === regionName);
+                        
+                        if (!isAlreadySelected) {{
+                            // Меняем цвет на темно-зеленый
+                            e.target.setStyle({{
+                                fillColor: '#006400',
+                                fillOpacity: 0.8,
+                                weight: 4,
+                                color: '#006400'
+                            }});
+                            
+                            // Убираем выделение с предыдущих регионов, если их уже 2
+                            if (selectedRegions.length >= 2) {{
+                                const oldRegion = selectedRegions.shift();
+                                const oldLayer = regionLayers.get(oldRegion.name);
+                                if (oldLayer) {{
+                                    oldLayer.setStyle({{
+                                        fillColor: '#90EE90',
+                                        fillOpacity: oldLayer.feature.properties.has_data ? 0.6 : 0.4,
+                                        weight: oldLayer.feature.properties.has_data ? 1.5 : 1,
+                                        color: '#2c3e50'
+                                    }});
+                                }}
+                            }}
+                        }}
                     }});
                 }}
             }});
+            
+            // Функция добавления региона к сравнению
+            window.addToComparison = function(regionName) {{
+                const regionData = regions.find(r => r.name === regionName);
+                if (!regionData) return;
+                
+                // Проверяем, не выбран ли уже этот регион
+                const isAlreadySelected = selectedRegions.some(r => r.name === regionName);
+                if (isAlreadySelected) {{
+                    alert('Этот регион уже выбран для сравнения');
+                    return;
+                }}
+                
+                // Если уже выбраны 2 региона, заменяем первый
+                if (selectedRegions.length >= 2) {{
+                    const oldRegion = selectedRegions.shift();
+                    const oldLayer = regionLayers.get(oldRegion.name);
+                    if (oldLayer) {{
+                        oldLayer.setStyle({{
+                            fillColor: '#90EE90',
+                            fillOpacity: oldLayer.feature.properties.has_data ? 0.6 : 0.4,
+                            weight: oldLayer.feature.properties.has_data ? 1.5 : 1,
+                            color: '#2c3e50'
+                        }});
+                    }}
+                }}
+                
+                selectedRegions.push(regionData);
+                
+                // Меняем цвет региона на темно-зеленый
+                const layer = regionLayers.get(regionName);
+                if (layer) {{
+                    layer.setStyle({{
+                        fillColor: '#006400',
+                        fillOpacity: 0.8,
+                        weight: 4,
+                        color: '#006400'
+                    }});
+                }}
+                
+                updateComparisonPanel();
+            }};
+            
+            // Функция обновления панели сравнения
+            function updateComparisonPanel() {{
+                const panel = document.getElementById('comparison-panel');
+                const region1Slot = document.getElementById('region1-slot');
+                const region2Slot = document.getElementById('region2-slot');
+                const comparisonTable = document.getElementById('comparison-table');
+                
+                panel.style.display = 'block';
+                
+                // Обновляем слоты регионов
+                if (selectedRegions.length > 0) {{
+                    region1Slot.innerHTML = `Регион 1: <strong>${{selectedRegions[0].name}}</strong>`;
+                    region1Slot.style.borderColor = '#28a745';
+                    region1Slot.style.backgroundColor = '#f8fff9';
+                    region1Slot.style.color = '#155724';
+                }} else {{
+                    region1Slot.innerHTML = 'Регион 1: не выбран';
+                    region1Slot.style.borderColor = '#ddd';
+                    region1Slot.style.backgroundColor = 'white';
+                    region1Slot.style.color = '#999';
+                }}
+                
+                if (selectedRegions.length > 1) {{
+                    region2Slot.innerHTML = `Регион 2: <strong>${{selectedRegions[1].name}}</strong>`;
+                    region2Slot.style.borderColor = '#28a745';
+                    region2Slot.style.backgroundColor = '#f8fff9';
+                    region2Slot.style.color = '#155724';
+                }} else {{
+                    region2Slot.innerHTML = 'Регион 2: не выбран';
+                    region2Slot.style.borderColor = '#ddd';
+                    region2Slot.style.backgroundColor = 'white';
+                    region2Slot.style.color = '#999';
+                }}
+                
+                // Создаем таблицу сравнения, если выбраны оба региона
+                if (selectedRegions.length === 2) {{
+                    comparisonTable.innerHTML = createComparisonTable(selectedRegions[0], selectedRegions[1]);
+                }} else {{
+                    comparisonTable.innerHTML = '';
+                }}
+            }}
+            
+            // Функция создания таблицы сравнения
+            function createComparisonTable(region1, region2) {{
+                if (!region1.hasData && !region2.hasData) {{
+                    return '<div style="text-align: center; color: #6c757d; padding: 20px;">У обоих регионов нет данных о ценах</div>';
+                }}
+                
+                // Собираем все виды топлива из обоих регионов
+                const allFuels = new Set();
+                Object.keys(region1.prices || {{}}).forEach(fuel => allFuels.add(fuel));
+                Object.keys(region2.prices || {{}}).forEach(fuel => allFuels.add(fuel));
+                
+                const fuelOrder = ["АИ-92", "АИ-92+", "АИ-95", "АИ-95+", "АИ-98", "АИ-100", "АИ-100+", "ДТ", "ДТ+", "Газ", "Пропан"];
+                const sortedFuels = fuelOrder.filter(f => allFuels.has(f));
+                
+                const fuelDisplayNames = {{
+                    "АИ-92": "АИ‑92", "АИ-92+": "АИ‑92+", "АИ-95": "АИ‑95",
+                    "АИ-95+": "АИ‑95+", "АИ-98": "АИ‑98", "АИ-100": "АИ‑100",
+                    "АИ-100+": "АИ‑100+", "ДТ": "Дизель", "ДТ+": "Дизель+",
+                    "Газ": "Газ", "Пропан": "Пропан"
+                }};
+                
+                const fuelColors = {{
+                    "АИ-92": "#228B22", "АИ-92+": "#32CD32",
+                    "АИ-95": "#4169E1", "АИ-95+": "#1E90FF", 
+                    "АИ-98": "#800080", "АИ-100": "#FFA500", 
+                    "АИ-100+": "#DAA520", "ДТ": "#8B4513", 
+                    "ДТ+": "#A0522D", "Газ": "#FFD700", "Пропан": "#FF69B4"
+                }};
+                
+                let table = '<table style="width: 100%; border-collapse: collapse; font-size: 12px;">';
+                table += '<tr style="background: #f8f9fa;">';
+                table += '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Топливо</th>';
+                table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center;">${{region1.name}}</th>`;
+                table += `<th style="padding: 8px; border: 1px solid #ddd; text-align: center;">${{region2.name}}</th>`;
+                table += '<th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Разница</th>';
+                table += '</tr>';
+                
+                sortedFuels.forEach(fuelType => {{
+                    const displayName = fuelDisplayNames[fuelType] || fuelType;
+                    const color = fuelColors[fuelType] || '#666';
+                    
+                    const price1 = region1.prices[fuelType];
+                    const price2 = region2.prices[fuelType];
+                    
+                    // Определяем единицы измерения
+                    let unit = 'руб/л';
+                    if (fuelType === 'Газ') unit = 'руб/м³';
+                    if (fuelType === 'Пропан') unit = 'руб/кг';
+                    
+                    const price1Cell = price1 ? `${{price1.toFixed(2)}} ${{unit}}` : '—';
+                    const price2Cell = price2 ? `${{price2.toFixed(2)}} ${{unit}}` : '—';
+                    
+                    let diffCell = '—';
+                    let diffStyle = '';
+                    if (price1 && price2) {{
+                        const diff = price2 - price1;
+                        if (Math.abs(diff) < 0.01) {{
+                            diffCell = '≈ 0';
+                            diffStyle = 'color: #6c757d;';
+                        }} else if (diff > 0) {{
+                            diffCell = `+${{diff.toFixed(2)}}`;
+                            diffStyle = 'color: #dc3545; font-weight: bold;';
+                        }} else {{
+                            diffCell = `${{diff.toFixed(2)}}`;
+                            diffStyle = 'color: #28a745; font-weight: bold;';
+                        }}
+                    }}
+                    
+                    table += `<tr>
+                        <td style='padding: 6px 8px; border: 1px solid #ddd;'>
+                            <span style='color: ${{color}}; margin-right: 6px;'>●</span>${{displayName}}
+                        </td>
+                        <td style='padding: 6px 8px; border: 1px solid #ddd; text-align: center;'>${{price1Cell}}</td>
+                        <td style='padding: 6px 8px; border: 1px solid #ddd; text-align: center;'>${{price2Cell}}</td>
+                        <td style='padding: 6px 8px; border: 1px solid #ddd; text-align: center; ${{diffStyle}}'>${{diffCell}}</td>
+                    </tr>`;
+                }});
+                
+                table += '</table>';
+                return table;
+            }}
+            
+            // Функция закрытия панели сравнения
+            window.closeComparison = function() {{
+                document.getElementById('comparison-panel').style.display = 'none';
+                clearComparison();
+            }};
+            
+            // Функция очистки сравнения
+            window.clearComparison = function() {{
+                selectedRegions.forEach(region => {{
+                    const layer = regionLayers.get(region.name);
+                    if (layer) {{
+                        layer.setStyle({{
+                            fillColor: '#90EE90',
+                            fillOpacity: layer.feature.properties.has_data ? 0.6 : 0.4,
+                            weight: layer.feature.properties.has_data ? 1.5 : 1,
+                            color: '#2c3e50'
+                        }});
+                    }}
+                }});
+                selectedRegions = [];
+                updateComparisonPanel();
+            }};
             
             // Поиск
             const searchInput = document.getElementById('search-input');
@@ -468,8 +820,10 @@ def main():
     geojson_path = "data/geojson/russia_reg v2.geojson"
     
     if not Path(geojson_path).exists():
-        print("[ERROR] Файл границ регионов не найден")
-        return
+        geojson_path = "src/russia_reg v2.geojson"
+        if not Path(geojson_path).exists():
+            print("[ERROR] Файл границ регионов не найден")
+            return
     
     # Поиск файла с ценами - ТОЛЬКО полные выгрузки
     prices_path, region_count = find_price_file()
@@ -481,7 +835,7 @@ def main():
         return
     
     print(f"[INFO] Используется файл: {prices_path} ({region_count} регионов)")
-    print(f"[OK] Полная выгрузка найдена - создаем карту...")
+    print(f"[OK] Полная выгрузка найдена - создаем карту с новыми функциями...")
     
     generator = UnifiedFuelMapGenerator(geojson_path, prices_path)
     generator.load_data()
@@ -489,8 +843,15 @@ def main():
     Path("data/maps").mkdir(parents=True, exist_ok=True)
     generator.create_map("data/maps/unified_fuel_map.html")
     
-    print("[SUCCESS] Упрощенная карта создана: data/maps/unified_fuel_map.html")
+    print("[SUCCESS] Обновленная карта создана: data/maps/unified_fuel_map.html")
     print(f"[BROWSER] Откройте: file://{Path('data/maps/unified_fuel_map.html').absolute()}")
+    print("[NEW FEATURES] Новые функции карты:")
+    print("  • Светло-зеленая заливка для всех регионов (включая Магадан)")
+    print("  • Кнопки масштаба смещены ниже (не перекрываются поиском)")
+    print("  • Режим сравнения регионов с кнопкой 'Сравнить регион'")
+    print("  • Темно-зеленое выделение выбранных регионов")
+    print("  • Таблица сравнения цен на топливо с разницей")
+    print("  • Отображение всех видов топлива для совместимости")
 
 if __name__ == "__main__":
     main()
