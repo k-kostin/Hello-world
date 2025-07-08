@@ -114,14 +114,24 @@ class UnifiedFuelMapGenerator:
         west = 19.0    # Западная граница (Калининградская область)
         east = 170.0   # Восточная граница (Чукотка)
         
-        # Создаем карту с жесткими ограничениями границ
+        # Создаем карту без базовых тайлов
         m = folium.Map(
             location=[61, 105], 
             zoom_start=3, 
-            tiles='OpenStreetMap',
+            tiles=None,
             min_zoom=2,       # Минимальный зуум
             max_zoom=10       # Максимальный зуум
         )
+        
+        # Добавляем OpenStreetMap как базовый тайл-слой с ООО РН-Лояльность атрибуцией
+        folium.TileLayer(
+            tiles='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',  # URL тайлов OpenStreetMap
+            name='OpenStreetMap',  # Название слоя
+            attr='ООО РН-Лояльность',  # Атрибуция (копирайт)
+            control=False,  # Не показывать в контроллере слоёв
+            overlay=False,  # Не является оверлеем (это базовый слой)
+            show=True  # Показывать по умолчанию
+        ).add_to(m)
         
         # Устанавливаем изначальный обзор
         m.fit_bounds([[south, west], [north, east]])
@@ -302,25 +312,21 @@ class UnifiedFuelMapGenerator:
         """
         m.get_root().html.add_child(Element(style_css))
 
-        # Добавляем код для удаления атрибуции OpenStreetMap
+        # Убираем префикс атрибуции Leaflet, но оставляем свободное движение камеры
         map_var = m.get_name()
         js_attrib = f"""
         <script>
         setTimeout(function() {{
             const map = {map_var};
             
-            // Убираем префикс атрибуции (копирайт OpenStreetMap)
+            // Убираем префикс атрибуции (копирайт Leaflet), но оставляем ООО РН-Лояльность
             if (map.attributionControl) {{
                 map.removeControl(map.attributionControl);
             }}
             L.control.attribution({{ prefix: false }}).addTo(map);
             
-            // Устанавливаем жесткие границы для ограничения движения камеры
-            const bounds = L.latLngBounds([[41.0, 19.0], [82.0, 170.0]]);
-            map.setMaxBounds(bounds);
-            map.on('drag', function() {{
-                map.panInsideBounds(bounds, {{ animate: false }});
-            }});
+            // Удаляем ограничения движения камеры для свободного перемещения
+            // НЕ устанавливаем setMaxBounds - пользователь может свободно перемещаться
             
             // Дополнительная страховка для скрытия OpenStreetMap из контроллера слоев  
             document.querySelectorAll('.leaflet-control-layers-base label').forEach(label => {{
@@ -596,7 +602,8 @@ def main():
     print("[FEATURES] Функции карты:")
     print("  • Светло-зеленая заливка для всех регионов")
     print("  • Кнопки масштаба смещены ниже (не перекрываются поиском)")
-    print("  • Ограничения камеры - карта не выходит за пределы России")
+    print("  • Свободное движение камеры - убраны ограничения перемещения")
+    print("  • ООО РН-Лояльность атрибуция добавлена в карту")
     print("  • Темно-зеленое выделение кликнутого региона")
     print("  • Поиск регионов с автодополнением")
     print("  • Отображение всех видов топлива в одном попапе")

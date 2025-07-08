@@ -192,14 +192,14 @@ class FuelPriceMapGenerator:
             tiles=None
         )
         
-        # Добавляем OpenStreetMap как базовый тайл-слой
+        # Добавляем OpenStreetMap как базовый тайл-слой с ООО РН-Лояльность атрибуцией
         folium.TileLayer(
-            tiles='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            name='OpenStreetMap',
-            attr='OpenStreetMap',
-            control=False,
-            overlay=False,
-            show=True
+            tiles='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',  # URL тайлов OpenStreetMap
+            name='OpenStreetMap',  # Название слоя
+            attr='ООО РН-Лояльность',  # Атрибуция (копирайт)
+            control=False,  # Не показывать в контроллере слоёв
+            overlay=False,  # Не является оверлеем (это базовый слой)
+            show=True  # Показывать по умолчанию
         ).add_to(m)
         
         # Получаем доступные типы топлива
@@ -392,12 +392,13 @@ class FuelPriceMapGenerator:
         """
         m.get_root().html.add_child(Element(search_html))
         
-        # Убираем префикс атрибуции
+        # Убираем префикс атрибуции Leaflet, но оставляем ООО РН-Лояльность
         map_var = m.get_name()
         js_attrib = f"""
         <script>
         setTimeout(function() {{
             const map = {map_var};
+            // Убираем префикс атрибуции (копирайт Leaflet), но оставляем ООО РН-Лояльность
             if (map.attributionControl) {{
                 map.removeControl(map.attributionControl);
             }}
