@@ -224,16 +224,19 @@ class UnifiedFuelMapGenerator:
                 popup_html += "</table>"
                 
                 # Добавляем кнопку сравнения
+                # Создаем чистый идентификатор для DOM элементов
+                import re
+                clean_id = re.sub(r'[^a-zA-Zа-яА-Я0-9 -]', '', region).replace(' ', '-').lower()
                 popup_html += f"""
                 <div style='text-align: center; margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;'>
                     <button onclick='toggleRegionComparison("{region}")' 
-                            id='compare-btn-{region.replace(" ", "-").replace("(", "").replace(")", "")}' 
+                            id='compare-btn-{clean_id}' 
                             style='background: #7db8e8; color: white; border: none; padding: 8px 16px; 
                                    border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; 
                                    transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'
                             onmouseover='this.style.background="#6ba6d6"; this.style.boxShadow="0 4px 8px rgba(0,0,0,0.15)";'
                             onmouseout='updateCompareButtonStyle("{region}")'>
-                        <span id='compare-text-{region.replace(" ", "-").replace("(", "").replace(")", "")}'>📊 Добавить в сравнение</span>
+                        <span id='compare-text-{clean_id}'>📊 Добавить в сравнение</span>
                     </button>
                 </div>"""
                 
@@ -466,25 +469,44 @@ class UnifiedFuelMapGenerator:
                     // Обработчик клика для выделения региона
                     layer.on('click', function(e) {{
                         const regionName = e.target.feature.properties.region_name;
-                        
-                        // Всегда меняем цвет на темно-зеленый при клике
-                        e.target.setStyle({{
-                            fillColor: '#006400',
-                            fillOpacity: 0.8,
-                            weight: 4,
-                            color: '#006400'
-                        }});
-                        
-                        // Помечаем как кликнутый
-                        e.target.isClicked = true;
+                        highlightRegion(e.target, regionName);
                     }});
                 }}
             }});
             
+            // Функция выделения региона (используется как при клике, так и при поиске)
+            function highlightRegion(layer, regionName) {{
+                // Всегда меняем цвет на темно-зеленый при клике
+                layer.setStyle({{
+                    fillColor: '#006400',
+                    fillOpacity: 0.8,
+                    weight: 4,
+                    color: '#006400'
+                }});
+                
+                // Помечаем как кликнутый
+                layer.isClicked = true;
+                
+                console.log('Region highlighted:', regionName);
+            }}
+            
+            // Функция очистки идентификатора для DOM
+            function cleanRegionId(regionName) {{
+                return regionName
+                    .replace(/[^a-zA-Zа-яА-Я0-9 -]/g, '')  // Убираем специальные символы кроме дефисов
+                    .replace(/\\s+/g, '-')  // Заменяем пробелы на дефисы
+                    .toLowerCase();
+            }}
+            
             // Функция переключения региона в сравнении
             window.toggleRegionComparison = function(regionName) {{
+                console.log('toggleRegionComparison called for:', regionName);
+                
                 const regionData = regions.find(r => r.name === regionName);
-                if (!regionData) return;
+                if (!regionData) {{
+                    console.error('Region not found:', regionName);
+                    return;
+                }}
                 
                 // Проверяем, выбран ли уже этот регион
                 const isAlreadySelected = selectedRegions.some(r => r.name === regionName);
@@ -502,6 +524,7 @@ class UnifiedFuelMapGenerator:
                         }});
                         layer.isClicked = false;
                     }}
+                    console.log('Region removed from comparison:', regionName);
                 }} else {{
                     // Добавляем регион в сравнение
                     // Если уже выбраны 2 региона, заменяем первый
@@ -533,6 +556,7 @@ class UnifiedFuelMapGenerator:
                         }});
                         layer.isClicked = true;
                     }}
+                    console.log('Region added to comparison:', regionName);
                 }}
                 
                 updateCompareButtonForRegion(regionName, !isAlreadySelected);
@@ -542,7 +566,7 @@ class UnifiedFuelMapGenerator:
             // Функция обновления стиля кнопки сравнения
             window.updateCompareButtonStyle = function(regionName) {{
                 const isSelected = selectedRegions.some(r => r.name === regionName);
-                const cleanName = regionName.replace(/\s+/g, '-').replace(/[()]/g, '');
+                const cleanName = cleanRegionId(regionName);
                 const button = document.getElementById(`compare-btn-${{cleanName}}`);
                 if (button) {{
                     if (isSelected) {{
@@ -555,9 +579,11 @@ class UnifiedFuelMapGenerator:
             
             // Функция обновления кнопки для конкретного региона
             function updateCompareButtonForRegion(regionName, isSelected) {{
-                const cleanName = regionName.replace(/\s+/g, '-').replace(/[()]/g, '');
+                const cleanName = cleanRegionId(regionName);
                 const button = document.getElementById(`compare-btn-${{cleanName}}`);
                 const text = document.getElementById(`compare-text-${{cleanName}}`);
+                
+                console.log('Updating button for region:', regionName, 'isSelected:', isSelected, 'cleanName:', cleanName);
                 
                 if (button && text) {{
                     if (isSelected) {{
@@ -567,6 +593,8 @@ class UnifiedFuelMapGenerator:
                         button.style.background = '#7db8e8';
                         text.innerHTML = '📊 Добавить в сравнение';
                     }}
+                }} else {{
+                    console.warn('Button or text element not found for region:', regionName);
                 }}
             }}
             
@@ -576,6 +604,8 @@ class UnifiedFuelMapGenerator:
                 const region1Slot = document.getElementById('region1-slot');
                 const region2Slot = document.getElementById('region2-slot');
                 const comparisonTable = document.getElementById('comparison-table');
+                
+                console.log('Updating comparison panel, selected regions:', selectedRegions.length);
                 
                 // Показываем панель если есть хотя бы один регион
                 if (selectedRegions.length > 0) {{
@@ -763,9 +793,13 @@ class UnifiedFuelMapGenerator:
                             const bounds = match.layer.getBounds();
                             map.fitBounds(bounds);
                             
+                            // ИСПРАВЛЕНИЕ: Добавляем выделение региона при поиске
                             setTimeout(() => {{
                                 const center = bounds.getCenter();
                                 match.layer.bindPopup(match.layer.feature.properties.popup_html).openPopup(center);
+                                
+                                // Выделяем регион так же, как при клике
+                                highlightRegion(match.layer, match.name);
                             }}, 300);
                             
                             searchInput.value = match.name;
