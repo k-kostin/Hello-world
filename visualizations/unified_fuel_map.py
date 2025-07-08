@@ -179,21 +179,7 @@ class UnifiedFuelMapGenerator:
 
     def create_map(self, output_path: str = "unified_fuel_map.html"):
         """Создает единую карту."""
-        # Настройки ограничений карты для России
-        russia_bounds = [[40, 19], [85, 180]]  # Примерные границы России
-        
-        m = folium.Map(
-            location=[61, 105], 
-            zoom_start=3, 
-            tiles='OpenStreetMap',
-            max_bounds=True,
-            min_zoom=2,
-            max_zoom=10
-        )
-        
-        # Добавляем ограничения карты
-        m.options['maxBounds'] = russia_bounds
-        m.options['maxBoundsViscosity'] = 1.0
+        m = folium.Map(location=[61, 105], zoom_start=3, tiles='OpenStreetMap')
         
         # Подготовка данных
         gcopy = json.loads(json.dumps(self.geojson_data))
@@ -240,7 +226,7 @@ class UnifiedFuelMapGenerator:
                 # Добавляем кнопку сравнения
                 # Создаем чистый идентификатор для DOM элементов
                 import re
-                clean_id = re.sub(r'[^a-zA-Zа-яА-Я0-9 -]', '', region).replace(' ', '-').replace('--', '-').lower()
+                clean_id = re.sub(r'[^a-zA-Zа-яА-Я0-9 -]', '', region).replace(' ', '-').lower()
                 popup_html += f"""
                 <div style='text-align: center; margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;'>
                     <button onclick='toggleRegionComparison("{region}")' 
@@ -289,13 +275,13 @@ class UnifiedFuelMapGenerator:
                 "fillOpacity": 0.6 if has_data else 0.4
             }
         
-        # Добавление слоя с улучшенными попапами
+        # Добавление слоя
         folium.GeoJson(
             gcopy,
             style_function=style_function,
             popup=folium.GeoJsonPopup(
                 fields=["popup_html"], aliases=[""], labels=False,
-                style="max-width: 450px; max-height: 500px; overflow-y: auto;"
+                style="max-width: 450px;"
             ),
             tooltip=folium.GeoJsonTooltip(
                 fields=["name"],
@@ -333,7 +319,7 @@ class UnifiedFuelMapGenerator:
             </div>
             <div id="comparison-content">
                 <div style="margin-bottom: 10px; color: #7f8c8d; font-size: 14px;">
-                    Выберите до двух регионов для сравнения цен на топливо
+                    Выберите два региона для сравнения цен на топливо
                 </div>
                 <div id="selected-regions" style="margin-bottom: 15px;">
                     <div id="region1-slot" style="padding: 8px; border: 2px dashed #ddd; border-radius: 4px; margin-bottom: 8px; color: #999;">
@@ -417,17 +403,6 @@ class UnifiedFuelMapGenerator:
             fill: #006400 !important;
             fill-opacity: 0.8 !important;
         }
-        
-        /* Контроль позиционирования попапов */
-        .leaflet-popup {
-            max-height: 80vh !important;
-            overflow-y: auto;
-        }
-        
-        .leaflet-popup-content-wrapper {
-            max-height: 80vh !important;
-            overflow-y: auto;
-        }
         </style>
         """
         m.get_root().html.add_child(Element(style_css))
@@ -468,11 +443,12 @@ class UnifiedFuelMapGenerator:
                     
                     layer.on('mouseout', function(e) {{
                         const l = e.target;
-                        // Проверяем, выбран ли регион для сравнения
+                        // Проверяем, выбран ли регион для сравнения или просто кликнут
                         const isSelected = selectedRegions.some(r => r.name === l.feature.properties.region_name);
+                        const isClicked = l.isClicked;
                         
-                        if (isSelected) {{
-                            // Оставляем темно-зеленую заливку для выбранных регионов
+                        if (isSelected || isClicked) {{
+                            // Оставляем темно-зеленую заливку для выбранных или кликнутых регионов
                             l.setStyle({{
                                 weight: 4,
                                 color: '#006400',
@@ -493,37 +469,25 @@ class UnifiedFuelMapGenerator:
                     // Обработчик клика для выделения региона
                     layer.on('click', function(e) {{
                         const regionName = e.target.feature.properties.region_name;
-                        console.log('Region clicked:', regionName);
-                        
-                        // ИСПРАВЛЕНИЕ: Клик на регион автоматически добавляет/убирает его из сравнения
-                        toggleRegionComparison(regionName);
-                        
-                        // Останавливаем всплытие события, чтобы избежать конфликтов
-                        e.originalEvent.stopPropagation();
+                        highlightRegion(e.target, regionName);
                     }});
                 }}
             }});
             
-            // Функция выделения региона
-            function highlightRegion(layer, regionName, isSelected = true) {{
-                if (isSelected) {{
-                    // Выделяем темно-зеленым для сравнения
-                    layer.setStyle({{
-                        fillColor: '#006400',
-                        fillOpacity: 0.8,
-                        weight: 4,
-                        color: '#006400'
-                    }});
-                }} else {{
-                    // Возвращаем к базовому стилю
-                    layer.setStyle({{
-                        fillColor: '#90EE90',
-                        fillOpacity: layer.feature.properties.has_data ? 0.6 : 0.4,
-                        weight: layer.feature.properties.has_data ? 1.5 : 1,
-                        color: '#2c3e50'
-                    }});
-                }}
-                console.log('Region highlighted:', regionName, 'selected:', isSelected);
+            // Функция выделения региона (используется как при клике, так и при поиске)
+            function highlightRegion(layer, regionName) {{
+                // Всегда меняем цвет на темно-зеленый при клике
+                layer.setStyle({{
+                    fillColor: '#006400',
+                    fillOpacity: 0.8,
+                    weight: 4,
+                    color: '#006400'
+                }});
+                
+                // Помечаем как кликнутый
+                layer.isClicked = true;
+                
+                console.log('Region highlighted:', regionName);
             }}
             
             // Функция очистки идентификатора для DOM
@@ -531,11 +495,10 @@ class UnifiedFuelMapGenerator:
                 return regionName
                     .replace(/[^a-zA-Zа-яА-Я0-9 -]/g, '')  // Убираем специальные символы кроме дефисов
                     .replace(/\\s+/g, '-')  // Заменяем пробелы на дефисы
-                    .replace(/--+/g, '-')  // Убираем двойные дефисы
                     .toLowerCase();
             }}
             
-            // ИСПРАВЛЕННАЯ функция переключения региона в сравнении
+            // Функция переключения региона в сравнении
             window.toggleRegionComparison = function(regionName) {{
                 console.log('toggleRegionComparison called for:', regionName);
                 
@@ -547,13 +510,19 @@ class UnifiedFuelMapGenerator:
                 
                 // Проверяем, выбран ли уже этот регион
                 const isAlreadySelected = selectedRegions.some(r => r.name === regionName);
-                const layer = regionLayers.get(regionName);
                 
                 if (isAlreadySelected) {{
                     // Убираем регион из сравнения
                     selectedRegions = selectedRegions.filter(r => r.name !== regionName);
+                    const layer = regionLayers.get(regionName);
                     if (layer) {{
-                        highlightRegion(layer, regionName, false);
+                        layer.setStyle({{
+                            fillColor: '#90EE90',
+                            fillOpacity: layer.feature.properties.has_data ? 0.6 : 0.4,
+                            weight: layer.feature.properties.has_data ? 1.5 : 1,
+                            color: '#2c3e50'
+                        }});
+                        layer.isClicked = false;
                     }}
                     console.log('Region removed from comparison:', regionName);
                 }} else {{
@@ -563,22 +532,33 @@ class UnifiedFuelMapGenerator:
                         const oldRegion = selectedRegions.shift();
                         const oldLayer = regionLayers.get(oldRegion.name);
                         if (oldLayer) {{
-                            highlightRegion(oldLayer, oldRegion.name, false);
+                            oldLayer.setStyle({{
+                                fillColor: '#90EE90',
+                                fillOpacity: oldLayer.feature.properties.has_data ? 0.6 : 0.4,
+                                weight: oldLayer.feature.properties.has_data ? 1.5 : 1,
+                                color: '#2c3e50'
+                            }});
+                            oldLayer.isClicked = false;
                         }}
                         updateCompareButtonForRegion(oldRegion.name, false);
-                        console.log('Replaced old region:', oldRegion.name);
                     }}
                     
                     selectedRegions.push(regionData);
                     
                     // Меняем цвет региона на темно-зеленый
+                    const layer = regionLayers.get(regionName);
                     if (layer) {{
-                        highlightRegion(layer, regionName, true);
+                        layer.setStyle({{
+                            fillColor: '#006400',
+                            fillOpacity: 0.8,
+                            weight: 4,
+                            color: '#006400'
+                        }});
+                        layer.isClicked = true;
                     }}
                     console.log('Region added to comparison:', regionName);
                 }}
                 
-                // Обновляем кнопку и панель
                 updateCompareButtonForRegion(regionName, !isAlreadySelected);
                 updateComparisonPanel();
             }};
@@ -590,9 +570,9 @@ class UnifiedFuelMapGenerator:
                 const button = document.getElementById(`compare-btn-${{cleanName}}`);
                 if (button) {{
                     if (isSelected) {{
-                        button.style.background = '#dc3545';  // Красный для "убрать"
+                        button.style.background = '#5a9fd8';
                     }} else {{
-                        button.style.background = '#7db8e8';  // Синий для "добавить"
+                        button.style.background = '#7db8e8';
                     }}
                 }}
             }};
@@ -607,10 +587,10 @@ class UnifiedFuelMapGenerator:
                 
                 if (button && text) {{
                     if (isSelected) {{
-                        button.style.background = '#dc3545';  // Красный для "убрать"
-                        text.innerHTML = '�️ Убрать из сравнения';
+                        button.style.background = '#5a9fd8';
+                        text.innerHTML = '📊 Убрать из сравнения';
                     }} else {{
-                        button.style.background = '#7db8e8';  // Синий для "добавить"
+                        button.style.background = '#7db8e8';
                         text.innerHTML = '📊 Добавить в сравнение';
                     }}
                 }} else {{
@@ -761,7 +741,13 @@ class UnifiedFuelMapGenerator:
                 selectedRegions.forEach(region => {{
                     const layer = regionLayers.get(region.name);
                     if (layer) {{
-                        highlightRegion(layer, region.name, false);
+                        layer.setStyle({{
+                            fillColor: '#90EE90',
+                            fillOpacity: layer.feature.properties.has_data ? 0.6 : 0.4,
+                            weight: layer.feature.properties.has_data ? 1.5 : 1,
+                            color: '#2c3e50'
+                        }});
+                        layer.isClicked = false;
                     }}
                     updateCompareButtonForRegion(region.name, false);
                 }});
@@ -807,9 +793,13 @@ class UnifiedFuelMapGenerator:
                             const bounds = match.layer.getBounds();
                             map.fitBounds(bounds);
                             
+                            // ИСПРАВЛЕНИЕ: Добавляем выделение региона при поиске
                             setTimeout(() => {{
                                 const center = bounds.getCenter();
                                 match.layer.bindPopup(match.layer.feature.properties.popup_html).openPopup(center);
+                                
+                                // Выделяем регион так же, как при клике
+                                highlightRegion(match.layer, match.name);
                             }}, 300);
                             
                             searchInput.value = match.name;
@@ -830,21 +820,13 @@ class UnifiedFuelMapGenerator:
                     searchResults.style.display = 'none';
                 }}
             }});
-            
-            // ИСПРАВЛЕНИЕ: Добавляем ограничения карты
-            const russiaBounds = L.latLngBounds([40, 19], [85, 180]);
-            map.setMaxBounds(russiaBounds);
-            map.on('drag', function() {{
-                map.panInsideBounds(russiaBounds, {{ animate: false }});
-            }});
-            
         }}, 1000);
         </script>
         """
         m.get_root().html.add_child(Element(js_code))
         
         m.save(output_path)
-        print(f"[OK] Исправленная карта сохранена: {output_path}")
+        print(f"[OK] Единая карта сохранена: {output_path}")
         return m
 
 def find_price_file():
