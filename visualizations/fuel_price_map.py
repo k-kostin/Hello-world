@@ -40,6 +40,7 @@ class FuelPriceMapGenerator:
             "ДТ": "#8B4513",         # Коричневый
             "ДТ+": "#A0522D",        # Светло-коричневый
             "Газ": "#FFD700",        # Золотой
+            "Пропан": "#FF69B4",     # Розовый
         }
         
         # Отображаемые названия типов топлива
@@ -54,6 +55,7 @@ class FuelPriceMapGenerator:
             "ДТ": "Дизель",
             "ДТ+": "Дизель+",
             "Газ": "Газ",
+            "Пропан": "Пропан",
         }
     
     def load_data(self):
@@ -119,13 +121,28 @@ class FuelPriceMapGenerator:
         return None
     
     def get_available_fuel_types(self) -> List[str]:
-        """Возвращает список доступных типов топлива."""
+        """Возвращает список доступных типов топлива в правильном порядке (АИ-92 первый)."""
         if self.price_data is None:
             return []
         fuel_types = set()
         for prices in self.price_data.values():
             fuel_types.update(prices.keys())
-        return sorted(list(fuel_types))
+        
+        # Определяем правильный порядок топлива (АИ-92 должен быть первым)
+        preferred_order = ["АИ-92", "АИ-92+", "АИ-95", "АИ-95+", "АИ-98", "АИ-100", "АИ-100+", "ДТ", "ДТ+", "Газ", "Пропан"]
+        
+        # Сортируем согласно предпочтительному порядку
+        sorted_fuels = []
+        for fuel in preferred_order:
+            if fuel in fuel_types:
+                sorted_fuels.append(fuel)
+        
+        # Добавляем оставшиеся типы топлива, которые не были в предпочтительном списке
+        for fuel in sorted(fuel_types):
+            if fuel not in sorted_fuels:
+                sorted_fuels.append(fuel)
+        
+        return sorted_fuels
     
     def create_interactive_map(self, output_path: str = "fuel_price_map.html") -> folium.Map:
         """
@@ -448,12 +465,31 @@ class FuelPriceMapGenerator:
         
         return m
 
+def find_price_file():
+    """Ищет файл с ценами на топливо."""
+    import glob
+    
+    # Возможные паттерны имен файлов
+    patterns = [
+        "regional_prices_*.json",
+        "prices_*.json", 
+        "fuel_prices_*.json"
+    ]
+    
+    for pattern in patterns:
+        files = glob.glob(pattern)
+        if files:
+            # Возвращаем самый новый файл
+            return max(files, key=lambda x: Path(x).stat().st_mtime)
+    
+    return None
+
 def main():
     """Основная функция для создания карт."""
     
     # Пути к файлам
     geojson_path = "data/geojson/russia_reg v2.geojson"
-    prices_path = "regional_prices_20250707_145425.json"
+    prices_path = find_price_file()
     
     # Проверяем наличие файлов
     if not Path(geojson_path).exists():
@@ -467,9 +503,12 @@ def main():
         else:
             return
     
-    if not Path(prices_path).exists():
-        print(f"Ошибка: файл {prices_path} не найден")
+    if not prices_path or not Path(prices_path).exists():
+        print("Ошибка: файл с ценами не найден")
+        print("Ожидаемые файлы: regional_prices_*.json, prices_*.json, fuel_prices_*.json")
         return
+    
+    print(f"Используется файл с ценами: {prices_path}")
     
     # Создаем генератор карт
     generator = FuelPriceMapGenerator(geojson_path, prices_path)
