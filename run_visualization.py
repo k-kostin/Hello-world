@@ -23,22 +23,19 @@ def install_dependencies():
         return False
 
 def find_price_file():
-    """Ищет файл с ценами на топливо. Приоритет полным выгрузкам всех регионов."""
+    """Ищет файл с ценами на топливо. ТОЛЬКО полные выгрузки всех регионов!"""
     import json
     
-    # Возможные паттерны имен файлов (приоритет полным выгрузкам)
+    # Строгий приоритет ТОЛЬКО полным выгрузкам (по аналогии с all_gas_stations_)
     patterns = [
-        "all_regions_*.json",           # Полные выгрузки всех регионов
-        "*_full_*.json",                # Файлы с пометкой "full"
-        "*_complete_*.json",            # Файлы с пометкой "complete"
-        "regional_prices_*.json",       # Обычные региональные выгрузки
-        "prices_*.json", 
-        "fuel_prices_*.json"
+        "all_regions_*.json",           # Полные выгрузки всех регионов (>=80 регионов)
     ]
     
     best_file = None
     max_regions = 0
-    min_required_regions = 50  # Минимум регионов для "полной" выгрузки
+    min_required_regions = 80  # СТРОГО: минимум 80 регионов для полной выгрузки
+    
+    print(f"[SEARCH] Поиск файлов с ПОЛНОЙ выгрузкой региональных цен (>={min_required_regions} регионов)...")
     
     for pattern in patterns:
         files = glob.glob(pattern)
@@ -49,22 +46,48 @@ def find_price_file():
                     # Считаем успешные регионы
                     region_count = sum(1 for item in data if item.get('status') == 'success')
                     
-                    # Приоритет файлам с большим количеством регионов
-                    if region_count > max_regions:
-                        max_regions = region_count
-                        best_file = file_path
+                    print(f"[CHECK] {file_path}: {region_count} регионов")
+                    
+                    # СТРОГО: принимаем только файлы с полной выгрузкой
+                    if region_count >= min_required_regions:
+                        if region_count > max_regions:
+                            max_regions = region_count
+                            best_file = file_path
+                    else:
+                        print(f"[REJECT] {file_path}: недостаточно регионов ({region_count} < {min_required_regions})")
+            except Exception as e:
+                print(f"[ERROR] Ошибка чтения {file_path}: {e}")
+                continue
+    
+    # Проверяем результат
+    if best_file and max_regions >= min_required_regions:
+        print(f"[SUCCESS] Найден файл с ПОЛНОЙ выгрузкой: {best_file} ({max_regions} регионов)")
+        return best_file
+    
+    # Если полной выгрузки нет - отклоняем все частичные файлы
+    print(f"[FAIL] НЕ НАЙДЕН файл с полной выгрузкой (>={min_required_regions} регионов)")
+    
+    # Ищем частичные выгрузки только для информирования
+    partial_patterns = [
+        "regions_*.json",
+        "regional_prices_*.json"
+    ]
+    
+    partial_files = []
+    for pattern in partial_patterns:
+        for file_path in glob.glob(pattern):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    region_count = sum(1 for item in data if item.get('status') == 'success')
+                    partial_files.append((file_path, region_count))
             except:
                 continue
     
-    # Проверяем полноту выгрузки
-    if best_file and max_regions > 0:
-        if max_regions >= min_required_regions:
-            print(f"[OK] Найден файл с ПОЛНОЙ выгрузкой: {best_file} ({max_regions} регионов)")
-        else:
-            print(f"[WARNING] Найден файл с ЧАСТИЧНОЙ выгрузкой: {best_file} ({max_regions} регионов)")
-            print(f"[RECOMMEND] Рекомендуется запустить: python regional_parser.py --all-regions")
-            
-        return best_file
+    if partial_files:
+        print(f"[INFO] Найдены файлы с частичными выгрузками (НЕ подходят для карт):")
+        for file_path, count in sorted(partial_files, key=lambda x: x[1], reverse=True):
+            print(f"  - {file_path}: {count} регионов")
     
     return None
 
@@ -91,21 +114,24 @@ def main():
     price_file = find_price_file()
     
     if not price_file:
-        print("[ERROR] ОШИБКА: Не найден файл с ценами на топливо!")
-        print("\n[INFO] ТРЕБУЕТСЯ ФАЙЛ С ЦЕНАМИ:")
-        print("   Файл должен находиться в корневой папке проекта")
-        print("   Возможные имена файлов:")
-        print("   • regional_prices_YYYYMMDD_HHMMSS.json")
-        print("   • prices_YYYYMMDD_HHMMSS.json")
-        print("   • fuel_prices_YYYYMMDD_HHMMSS.json")
-        print("\n[HOW-TO] КАК ПОЛУЧИТЬ ФАЙЛ С ЦЕНАМИ:")
-        print("   1. Запустите парсер: python regional_parser.py")
-        print("   2. Или используйте существующий файл: regional_prices_20250707_145425.json")
-        print("   3. Убедитесь, что файл содержит данные в формате JSON с ценами")
-        print("\n[EXAMPLE] ПРИМЕР СОДЕРЖИМОГО ФАЙЛА:")
-        print("   [")
-        print('     {"region_id": 77, "region_name": "Регион", "fuel_prices": {"АИ-92": 56.5, "Пропан": 27.5}}')
-        print("   ]")
+        print("[ERROR] ОШИБКА: Не найден файл с ПОЛНОЙ выгрузкой региональных цен!")
+        print("\n[REQUIREMENT] ДЛЯ СОЗДАНИЯ КАРТ ТРЕБУЕТСЯ:")
+        print("   ✅ Файл с полной выгрузкой региональных цен (>=80 регионов)")
+        print("   ✅ Название файла должно начинаться с 'all_regions_'")
+        print("   ✅ Файл должен находиться в корневой папке проекта")
+        print("\n[HOW-TO] КАК ПОЛУЧИТЬ ПОЛНУЮ ВЫГРУЗКУ:")
+        print("   1. Запустите: python regional_parser.py --all-regions")
+        print("   2. Дождитесь завершения парсинга (~10-15 минут)")
+        print("   3. Будет создан файл вида: all_regions_YYYYMMDD_HHMMSS.json")
+        print("   4. Повторно запустите создание карты")
+        print("\n[IMPORTANT] ПОЧЕМУ НУЖНА ПОЛНАЯ ВЫГРУЗКА:")
+        print("   • Карта должна показывать все регионы России")
+        print("   • Частичные выгрузки не дают полную картину цен")
+        print("   • Пользователи ожидают видеть данные по всей стране")
+        print("\n[FILES] ФАЙЛЫ НЕ ПОДХОДЯЩИЕ ДЛЯ КАРТ:")
+        print("   ❌ regional_prices_*.json (частичные выгрузки)")
+        print("   ❌ regions_partial_*.json (неполные данные)")
+        print("   ❌ regions_*of85_*.json (крупные, но не полные)")
         return False
     
     print(f"[OK] Найден файл с ценами: {price_file}")

@@ -477,7 +477,8 @@ def save_regional_csv_report(results, filename):
 
 
 def save_regional_data(results):
-    """Сохраняет данные в файлы (JSON, Excel и CSV) с правильным неймингом по полноте"""
+    """Сохраняет данные в файлы (JSON, Excel и CSV) с правильным неймингом по полноте выгрузки.
+    Использует систему именования по аналогии с АЗС."""
     if not results:
         return
     
@@ -485,18 +486,21 @@ def save_regional_data(results):
     
     # Определяем полноту выгрузки
     successful_count = len([r for r in results if r.status == 'success'])
+    total_expected_regions = 85  # Примерное количество всех регионов России
     
-    # Система нейминга по полноте выгрузки
-    if successful_count >= 80:  # Почти все регионы
-        prefix = f"all_regions_full_{successful_count}reg"
-    elif successful_count >= 50:  # Большинство регионов
-        prefix = f"all_regions_major_{successful_count}reg"
-    elif successful_count >= 20:  # Средняя выгрузка
-        prefix = f"regional_prices_medium_{successful_count}reg"
-    elif successful_count >= 10:  # Малая выгрузка
-        prefix = f"regional_prices_small_{successful_count}reg"
-    else:  # Тестовая/демо выгрузка
-        prefix = f"regional_prices_demo_{successful_count}reg"
+    # Система нейминга по аналогии с АЗС (полная выгрузка vs частичная)
+    if successful_count >= 80:  # 95%+ регионов - это полная выгрузка
+        # Полная выгрузка всех регионов (по аналогии с all_gas_stations_)
+        prefix = f"all_regions"
+        file_type = "ПОЛНАЯ"
+    elif successful_count >= 60:  # 70%+ регионов - большая выгрузка
+        # Крупная выгрузка с указанием количества регионов
+        prefix = f"regions_{successful_count}of{total_expected_regions}"
+        file_type = "КРУПНАЯ"
+    else:  # Частичная выгрузка
+        # Частичная выгрузка с указанием количества регионов
+        prefix = f"regions_partial_{successful_count}reg"
+        file_type = "ЧАСТИЧНАЯ"
     
     # Сохраняем в JSON
     json_filename = f"{prefix}_{timestamp}.json"
@@ -516,7 +520,14 @@ def save_regional_data(results):
         json.dump(json_data, f, ensure_ascii=False, indent=2)
     
     logger.info(f"[SAVE] Данные сохранены в JSON: {json_filename}")
-    logger.info(f"[NAMING] Тип выгрузки: {prefix.split('_')[0]} ({successful_count} из ~85 регионов)")
+    logger.info(f"[NAMING] Тип выгрузки: {file_type} ({successful_count} из ~{total_expected_regions} регионов)")
+    
+    # Важная информация для пользователя
+    if successful_count >= 80:
+        logger.info(f"[VISUALIZATION] ✅ Файл подходит для создания карт (полная выгрузка)")
+    else:
+        logger.warning(f"[VISUALIZATION] ⚠️  Файл НЕ подходит для карт - нужна полная выгрузка (>=80 регионов)")
+        logger.warning(f"[RECOMMEND] Запустите: python regional_parser.py --all-regions")
     
     # Сохраняем в Excel с тем же префиксом
     excel_filename = f"{prefix}_{timestamp}.xlsx"
