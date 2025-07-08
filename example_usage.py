@@ -96,7 +96,7 @@ def example_data_analysis():
     comparison = DataProcessor.compare_networks(df_clean, "АИ-95")
     logger.info("\nСравнение сетей по АИ-95:")
     for row in comparison.head(3).iter_rows(named=True):
-        logger.info(f"  {row['network_name']}: {row['avg_price']:.2f} руб/л "
+        logger.info(f"  {row['network_name']}: {row['avg_price']:.2f} руб/ед. "
                    f"({row['stations_count']} станций)")
 
 
@@ -118,7 +118,7 @@ def example_cheapest_stations():
     for row in cheapest.iter_rows(named=True):
         logger.info(f"  {row['network_name']} - {row['station_name']}")
         logger.info(f"    Адрес: {row['address']}")
-        logger.info(f"    Цена: {row['price']:.2f} руб/л")
+        logger.info(f"    Цена: {row['price']:.2f} руб/ед.")
         logger.info("")
 
 

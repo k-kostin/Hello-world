@@ -227,7 +227,14 @@ class FuelPriceMapGenerator:
                 region_prices = self.find_region_prices(region)
                 if region_prices is not None and fuel_type in region_prices:
                     price = region_prices[fuel_type]
-                    html.append(f"<br/>{display_name}: {price:.2f} руб/л")
+                    # Определяем правильные единицы измерения
+                    if fuel_type == "Газ":
+                        unit = "руб/м³"
+                    elif fuel_type == "Пропан":
+                        unit = "руб/кг"
+                    else:
+                        unit = "руб/л"
+                    html.append(f"<br/>{display_name}: {price:.2f} {unit}")
                     props["has_price"] = True
                     props["fuel_price"] = price
                 else:

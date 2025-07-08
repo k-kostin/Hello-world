@@ -23,19 +23,48 @@ def install_dependencies():
         return False
 
 def find_price_file():
-    """Ищет файл с ценами на топливо."""
-    # Возможные паттерны имен файлов
+    """Ищет файл с ценами на топливо. Приоритет полным выгрузкам всех регионов."""
+    import json
+    
+    # Возможные паттерны имен файлов (приоритет полным выгрузкам)
     patterns = [
-        "regional_prices_*.json",
+        "all_regions_*.json",           # Полные выгрузки всех регионов
+        "*_full_*.json",                # Файлы с пометкой "full"
+        "*_complete_*.json",            # Файлы с пометкой "complete"
+        "regional_prices_*.json",       # Обычные региональные выгрузки
         "prices_*.json", 
         "fuel_prices_*.json"
     ]
     
+    best_file = None
+    max_regions = 0
+    min_required_regions = 50  # Минимум регионов для "полной" выгрузки
+    
     for pattern in patterns:
         files = glob.glob(pattern)
-        if files:
-            # Возвращаем самый новый файл
-            return max(files, key=lambda x: Path(x).stat().st_mtime)
+        for file_path in files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Считаем успешные регионы
+                    region_count = sum(1 for item in data if item.get('status') == 'success')
+                    
+                    # Приоритет файлам с большим количеством регионов
+                    if region_count > max_regions:
+                        max_regions = region_count
+                        best_file = file_path
+            except:
+                continue
+    
+    # Проверяем полноту выгрузки
+    if best_file and max_regions > 0:
+        if max_regions >= min_required_regions:
+            print(f"[OK] Найден файл с ПОЛНОЙ выгрузкой: {best_file} ({max_regions} регионов)")
+        else:
+            print(f"[WARNING] Найден файл с ЧАСТИЧНОЙ выгрузкой: {best_file} ({max_regions} регионов)")
+            print(f"[RECOMMEND] Рекомендуется запустить: python regional_parser.py --all-regions")
+            
+        return best_file
     
     return None
 
