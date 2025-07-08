@@ -114,17 +114,16 @@ class UnifiedFuelMapGenerator:
         west = 19.0    # Западная граница (Калининградская область)
         east = 170.0   # Восточная граница (Чукотка)
         
-        # Создаем карту с ограничениями камеры
+        # Создаем карту с жесткими ограничениями границ
         m = folium.Map(
             location=[61, 105], 
             zoom_start=3, 
             tiles='OpenStreetMap',
-            max_bounds=True,  # Включаем ограничения
             min_zoom=2,       # Минимальный зуум
             max_zoom=10       # Максимальный зуум
         )
         
-        # Устанавливаем границы карты
+        # Устанавливаем изначальный обзор
         m.fit_bounds([[south, west], [north, east]])
         
         # Подготовка данных
@@ -252,14 +251,17 @@ class UnifiedFuelMapGenerator:
         
         folium.Element(legend_html).add_to(m)
         
-        # Поиск регионов
+        # Поиск регионов с кнопкой очистки
         search_html = """
         <div style="position: fixed; top: 10px; left: 10px; z-index: 1000; width: 250px;">
             <div style="position: relative;">
                 <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); z-index: 1001; color: #666; pointer-events: none;">🔍</span>
                 <input type="text" id="search-input" placeholder="Поиск региона..." 
-                       style="width: 100%; padding: 10px 10px 10px 35px; border: 2px solid #ddd; border-radius: 6px; 
+                       style="width: 100%; padding: 10px 40px 10px 35px; border: 2px solid #ddd; border-radius: 6px; 
                               font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <button type="button" id="clear-search" aria-label="Очистить поиск"
+                        style="display: none; position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+                               border: none; background: transparent; font-size: 16px; color: #888; cursor: pointer;">&times;</button>
             </div>
             <div id="search-results" style="max-height: 200px; overflow-y: auto; margin-top: 5px; 
                                           display: none; background: white; border: 2px solid #ddd; 
@@ -300,8 +302,39 @@ class UnifiedFuelMapGenerator:
         """
         m.get_root().html.add_child(Element(style_css))
 
-        # JavaScript для поиска и интерактивности
+        # Добавляем код для удаления атрибуции OpenStreetMap
         map_var = m.get_name()
+        js_attrib = f"""
+        <script>
+        setTimeout(function() {{
+            const map = {map_var};
+            
+            // Убираем префикс атрибуции (копирайт OpenStreetMap)
+            if (map.attributionControl) {{
+                map.removeControl(map.attributionControl);
+            }}
+            L.control.attribution({{ prefix: false }}).addTo(map);
+            
+            // Устанавливаем жесткие границы для ограничения движения камеры
+            const bounds = L.latLngBounds([[41.0, 19.0], [82.0, 170.0]]);
+            map.setMaxBounds(bounds);
+            map.on('drag', function() {{
+                map.panInsideBounds(bounds, {{ animate: false }});
+            }});
+            
+            // Дополнительная страховка для скрытия OpenStreetMap из контроллера слоев  
+            document.querySelectorAll('.leaflet-control-layers-base label').forEach(label => {{
+                if (label.textContent.includes('OpenStreetMap')) {{
+                    const parent = label.closest('div');
+                    if (parent) parent.style.display = 'none';
+                }}
+            }});
+        }}, 500);
+        </script>
+        """
+        m.get_root().html.add_child(Element(js_attrib))
+
+        # JavaScript для поиска и интерактивности
         js_code = f"""
         <script>
         setTimeout(function() {{
@@ -358,6 +391,18 @@ class UnifiedFuelMapGenerator:
                         const regionName = e.target.feature.properties.region_name;
                         highlightRegion(e.target, regionName);
                     }});
+                    
+                    // Обработчик закрытия попапа - снимаем темно-зеленую покраску
+                    layer.on('popupclose', function(e) {{
+                        const l = e.target;
+                        l.setStyle({{
+                            fillColor: '#90EE90',
+                            fillOpacity: l.feature.properties.has_data ? 0.6 : 0.4,
+                            weight: l.feature.properties.has_data ? 1.5 : 1,
+                            color: '#2c3e50'
+                        }});
+                        l.isClicked = false;
+                    }});
                 }}
             }});
             
@@ -390,11 +435,29 @@ class UnifiedFuelMapGenerator:
                 console.log('Region highlighted:', regionName);
             }}
             
-            // Поиск
+            // Поиск с кнопкой очистки
             const searchInput = document.getElementById('search-input');
             const searchResults = document.getElementById('search-results');
+            const clearButton = document.getElementById('clear-search');
+            
+            // Показываем/скрываем кнопку очистки
+            function toggleClearButton() {{
+                clearButton.style.display = searchInput.value.trim() ? 'block' : 'none';
+            }}
+            
+            // Функция очистки поиска
+            function clearSearch() {{
+                searchInput.value = '';
+                searchResults.style.display = 'none';
+                toggleClearButton();
+                searchInput.focus();
+            }}
+            
+            // Обработчики событий
+            clearButton.addEventListener('click', clearSearch);
             
             searchInput.addEventListener('input', function() {{
+                toggleClearButton();
                 const query = this.value.trim().toLowerCase();
                 
                 if (!query) {{
@@ -439,6 +502,7 @@ class UnifiedFuelMapGenerator:
                             
                             searchInput.value = match.name;
                             searchResults.style.display = 'none';
+                            toggleClearButton();
                         }});
                         
                         searchResults.appendChild(div);
