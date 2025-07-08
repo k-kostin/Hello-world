@@ -61,7 +61,8 @@ class UnifiedFuelMapGenerator:
         synonyms = {
             "Москва": ["Московская область", "г. Москва", "Москва г"],
             "Санкт-Петербург": ["Ленинградская область", "г. Санкт-Петербург", "СПб"],
-            "Ханты-Мансийский автономный округ - Югра": ["ХМАО", "Югра"],
+            "Ханты-Мансийский автономный округ - Югра": ["ХМАО", "Югра", "Ханты-Мансийский автономный округ (Югра)"],
+            "Удмуртская Республика": ["Республика Удмуртия"],
             "Ямало-Ненецкий автономный округ": ["ЯНАО", "Ямало-Ненецкий АО"],
             "Республика Саха (Якутия)": ["Якутия", "Саха"],
             "Карачаево-Черкесская Республика": ["КЧР", "Карачаево-Черкесия"],
@@ -149,7 +150,6 @@ class UnifiedFuelMapGenerator:
                     </tr>"""
                 
                 popup_html += "</table>"
-                popup_html += f"<div style='text-align: center; margin-top: 10px; color: #7f8c8d; font-size: 12px;'>Нажмите на другой регион для сравнения</div>"
                 popup_html += "</div>"
                 
                 # Цвет региона по основному топливу (АИ-92 приоритет)
@@ -188,11 +188,12 @@ class UnifiedFuelMapGenerator:
                     "fillOpacity": opacity
                 }
             else:
+                # Базовая заливка для всех регионов без данных
                 return {
-                    "fillColor": "#f8f9fa",
-                    "color": "#dee2e6",
-                    "weight": 0.8,
-                    "fillOpacity": 0.3
+                    "fillColor": "#e8f4f8",
+                    "color": "#2c3e50",
+                    "weight": 1,
+                    "fillOpacity": 0.4
                 }
         
         # Добавление слоя
@@ -257,6 +258,30 @@ class UnifiedFuelMapGenerator:
         """
         m.get_root().html.add_child(Element(search_html))
         
+        # CSS для улучшения интерфейса
+        style_css = """
+        <style>
+        /* Перемещение кнопок масштаба ниже */
+        .leaflet-control-zoom {
+            top: 120px !important;
+            left: 10px !important;
+        }
+        
+        /* Убираем прямоугольную обводку при клике */
+        .leaflet-interactive:focus {
+            outline: none !important;
+        }
+        
+        /* Улучшаем внешний вид кнопок масштаба */
+        .leaflet-control-zoom a {
+            background-color: rgba(255, 255, 255, 0.9) !important;
+            border: 1px solid #ccc !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+        }
+        </style>
+        """
+        m.get_root().html.add_child(Element(style_css))
+
         # JavaScript для поиска и интерактивности
         map_var = m.get_name()
         js_code = f"""
@@ -288,13 +313,13 @@ class UnifiedFuelMapGenerator:
                     layer.on('mouseout', function(e) {{
                         const l = e.target;
                         const hasData = l.feature.properties.has_data;
-                        const color = l.feature.properties.base_color || '#bdc3c7';
+                        const color = l.feature.properties.base_color || '#e8f4f8';
                         const fuelCount = l.feature.properties.fuel_count || 0;
-                        const opacity = hasData ? Math.min(0.8, 0.4 + (fuelCount * 0.05)) : 0.3;
+                        const opacity = hasData ? Math.min(0.8, 0.4 + (fuelCount * 0.05)) : 0.4;
                         
                         l.setStyle({{
-                            weight: hasData ? 1.5 : 0.8,
-                            color: hasData ? '#2c3e50' : '#dee2e6',
+                            weight: hasData ? 1.5 : 1,
+                            color: '#2c3e50',
                             fillOpacity: opacity
                         }});
                     }});
@@ -372,7 +397,7 @@ class UnifiedFuelMapGenerator:
         return m
 
 def find_price_file():
-    """Ищет файл с ценами, СТРОГИЙ приоритет ТОЛЬКО полным выгрузкам всех регионов."""
+    """Ищет файл с ценами, приоритет полным выгрузкам, но допускает частичные для тестирования."""
     patterns = [
         "all_regions_*.json",           # ТОЛЬКО полные выгрузки всех регионов (>=80 регионов)
     ]
