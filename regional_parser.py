@@ -106,7 +106,7 @@ def list_available_regions():
             print("-" * 60)
             
             # Группируем регионы для лучшего отображения
-            popular_ids = REGIONS_CONFIG.get('default_regions', [77, 78, 50, 40, 23, 66])
+            popular_ids = REGIONS_CONFIG.get('default_regions', [77, 78, 50, 40, 23, 66, 96])
             
             print("📍 Популярные регионы:")
             for region_id, region_name in sorted(regions.items()):
@@ -152,7 +152,7 @@ def run_regional_parsing_standalone(args):
         
     elif args.popular_regions:
         all_regions = parser.get_all_regions()
-        popular_ids = REGIONS_CONFIG.get('default_regions', [77, 78, 50, 40, 23, 66])
+        popular_ids = REGIONS_CONFIG.get('default_regions', [77, 78, 50, 40, 23, 66, 96])
         regions_to_parse = [
             {'id': region_id, 'name': all_regions[region_id]}
             for region_id in popular_ids
@@ -374,22 +374,7 @@ def save_regional_excel_report(results, filename):
                 summary_df = pd.DataFrame(fuel_summary)
                 summary_df.to_excel(writer, sheet_name='Статистика по топливу', index=False)
             
-            # Лист 3: Самые дорогие регионы (по АИ-95 если есть)
-            if successful_results:
-                ai95_regions = [(r.region_name, r.fuel_prices.get('АИ-95', 0)) 
-                               for r in successful_results 
-                               if r.fuel_prices.get('АИ-95', 0) > 0]
-                
-                if ai95_regions:
-                    ai95_sorted = sorted(ai95_regions, key=lambda x: x[1], reverse=True)
-                    expensive_df = pd.DataFrame(ai95_sorted[:10], columns=['Регион', 'Цена АИ-95'])
-                    expensive_df.to_excel(writer, sheet_name='Дорогие регионы АИ-95', index=False)
-                    
-                    # Лист 4: Самые дешевые регионы
-                    cheap_df = pd.DataFrame(ai95_sorted[-10:], columns=['Регион', 'Цена АИ-95'])
-                    cheap_df.to_excel(writer, sheet_name='Дешевые регионы АИ-95', index=False)
-            
-            # Лист 5: Общая информация
+            # Лист 3: Общая информация
             info_data = [
                 ['Дата и время парсинга', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
                 ['Всего регионов обработано', len(results)],
@@ -443,8 +428,49 @@ def save_regional_excel_report(results, filename):
             logger.error(f"Не удалось создать даже простой Excel файл: {e2}")
 
 
+def save_regional_csv_report(results, filename):
+    """Создает CSV отчет с региональными ценами"""
+    import pandas as pd
+    
+    try:
+        # Подготавливаем данные для CSV
+        csv_data = []
+        for result in results:
+            if result.status == 'success' and result.fuel_prices:
+                base_row = {
+                    'region_id': result.region_id,
+                    'region_name': result.region_name,
+                    'timestamp': result.timestamp,
+                    'url': result.url,
+                    'status': result.status
+                }
+                
+                # Добавляем цены по типам топлива как отдельные колонки (исключая АИ-80)
+                for fuel_type, price in result.fuel_prices.items():
+                    if fuel_type != 'АИ-80':
+                        base_row[f'{fuel_type}'] = price
+                
+                csv_data.append(base_row)
+        
+        if csv_data:
+            df = pd.DataFrame(csv_data)
+            # Сортируем колонки для лучшего отображения
+            cols = ['region_id', 'region_name', 'timestamp', 'url', 'status']
+            fuel_cols = [col for col in df.columns if col not in cols]
+            fuel_cols.sort()  # Сортируем типы топлива по алфавиту
+            df = df[cols + fuel_cols]
+            
+            df.to_csv(filename, index=False, encoding='utf-8-sig')
+            logger.info(f"📄 Данные сохранены в CSV: {filename}")
+        else:
+            logger.warning("Нет данных для сохранения в CSV")
+            
+    except Exception as e:
+        logger.error(f"Ошибка создания CSV отчета: {e}")
+
+
 def save_regional_data(results):
-    """Сохраняет данные в файлы (JSON и Excel)"""
+    """Сохраняет данные в файлы (JSON, Excel и CSV)"""
     if not results:
         return
     
@@ -474,6 +500,10 @@ def save_regional_data(results):
     save_regional_excel_report(results, excel_filename)
     
     logger.info(f"📊 Данные сохранены в Excel: {excel_filename}")
+    
+    # Сохраняем в CSV
+    csv_filename = f"regional_prices_{timestamp}.csv"
+    save_regional_csv_report(results, csv_filename)
 
 
 def main():

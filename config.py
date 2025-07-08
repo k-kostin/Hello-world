@@ -106,7 +106,7 @@ OUTPUT_SCHEMA = {
 # Настройки для работы с регионами
 REGIONS_CONFIG = {
     "regions_file": "regions.md",
-    "default_regions": [77, 78, 50, 40, 23, 66],  # Москва, СПб, Московская, Курская, Краснодар, Свердловская
+    "default_regions": [77, 78, 50, 40, 23, 66, 96],  # Москва, СПб, Московская, Курская, Краснодар, Свердловская, Севастополь
     "enable_region_filtering": True,
     "enable_multi_region_parsing": True,
     "max_regions_per_network": 10  # Максимум регионов для парсинга одновременно

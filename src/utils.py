@@ -325,6 +325,86 @@ class DataProcessor:
             
         except Exception as e:
             logger.error(f"Ошибка создания отчета: {e}")
+    
+    @staticmethod
+    def export_summary_csv_report(df: pl.DataFrame, output_dir: str = "reports"):
+        """
+        Экспортирует сводный отчет в CSV файлы
+        
+        Args:
+            df: DataFrame с данными
+            output_dir: Директория для сохранения CSV файлов
+        """
+        # Создаем директорию если её нет
+        os.makedirs(output_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        logger.info(f"Создание CSV отчетов в директории: {output_dir}")
+        
+        try:
+            # Получаем статистику
+            stats = DataProcessor.get_price_statistics(df)
+            
+            # 1. Общая статистика
+            general_stats = pl.DataFrame([
+                {"Метрика": "Всего записей", "Значение": stats["total_records"]},
+                {"Метрика": "Всего станций", "Значение": stats["total_stations"]},
+                {"Метрика": "Всего сетей", "Значение": stats["total_networks"]},
+                {"Метрика": "Всего городов", "Значение": stats["total_cities"]}
+            ])
+            general_stats.write_csv(f"{output_dir}/general_stats_{timestamp}.csv", encoding="utf-8-sig")
+            
+            # 2. Статистика по топливу
+            fuel_df = pl.DataFrame(stats["fuel_types"])
+            fuel_df.write_csv(f"{output_dir}/fuel_stats_{timestamp}.csv", encoding="utf-8-sig")
+            
+            # 3. Статистика по сетям
+            networks_df = pl.DataFrame(stats["networks"])
+            networks_df.write_csv(f"{output_dir}/network_stats_{timestamp}.csv", encoding="utf-8-sig")
+            
+            # 4. Самые дорогие города
+            cities_df = pl.DataFrame(stats["top_expensive_cities"])
+            cities_df.write_csv(f"{output_dir}/expensive_cities_{timestamp}.csv", encoding="utf-8-sig")
+            
+            # 5. Сравнение сетей по АИ-95
+            comparison_95 = DataProcessor.compare_networks(df, "АИ-95")
+            comparison_95.write_csv(f"{output_dir}/ai95_network_comparison_{timestamp}.csv", encoding="utf-8-sig")
+            
+            # 6. Самые дешевые заправки АИ-95
+            cheapest_95 = DataProcessor.find_cheapest_stations(df, "АИ-95", limit=20)
+            cheapest_95.write_csv(f"{output_dir}/cheapest_ai95_stations_{timestamp}.csv", encoding="utf-8-sig")
+            
+            # 7. Основные данные (урезанная версия для CSV)
+            main_data = df.select([
+                "network_name", "station_name", "address", "city", 
+                "fuel_type", "price", "last_updated"
+            ])
+            main_data.write_csv(f"{output_dir}/all_stations_data_{timestamp}.csv", encoding="utf-8-sig")
+            
+            logger.info(f"CSV отчеты сохранены в {output_dir}/ с меткой времени {timestamp}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка создания CSV отчетов: {e}")
+    
+    @staticmethod
+    def export_combined_report(df: pl.DataFrame, output_base: str = "price_analysis_report"):
+        """
+        Экспортирует сводный отчет и в Excel, и в CSV
+        
+        Args:
+            df: DataFrame с данными
+            output_base: Базовое имя файлов (без расширения)
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Экспорт в Excel
+        excel_file = f"{output_base}_{timestamp}.xlsx"
+        DataProcessor.export_summary_report(df, excel_file)
+        
+        # Экспорт в CSV
+        csv_dir = f"{output_base}_csv_{timestamp}"
+        DataProcessor.export_summary_csv_report(df, csv_dir)
 
 
 class DataValidator:

@@ -141,7 +141,7 @@ for result in results:
 from config import REGIONS_CONFIG
 
 # Популярные регионы из конфигурации
-popular_regions_ids = REGIONS_CONFIG['default_regions']  # [77, 78, 50, 40, 23, 66]
+popular_regions_ids = REGIONS_CONFIG['default_regions']  # [77, 78, 50, 40, 23, 66, 96]
 
 # Получаем названия регионов
 all_regions = parser.get_all_regions()
@@ -263,7 +263,7 @@ GAS_STATION_NETWORKS["regional_prices"] = {
 
 # Настройки регионов
 REGIONS_CONFIG = {
-    "default_regions": [77, 78, 50, 40, 23, 66],  # Популярные регионы
+    "default_regions": [77, 78, 50, 40, 23, 66, 96],  # Популярные регионы
     "max_regions_per_network": 10,                 # Лимит на одну сеть
     "enable_multi_region_parsing": True            # Множественный парсинг
 }

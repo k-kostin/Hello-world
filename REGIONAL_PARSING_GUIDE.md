@@ -273,7 +273,7 @@ GAS_STATION_NETWORKS["regional_prices"] = {
 # Настройки регионов
 REGIONS_CONFIG = {
     "regions_file": "regions.md",
-    "default_regions": [77, 78, 50, 40, 23, 66],  # Популярные регионы
+    "default_regions": [77, 78, 50, 40, 23, 66, 96],  # Популярные регионы
     "enable_region_filtering": True,
     "enable_multi_region_parsing": True,
     "max_regions_per_network": 10
