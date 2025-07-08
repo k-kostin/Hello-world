@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Основной скрипт для создания интерактивных карт с ценами на топливо.
-Автоматически создает маппинг регионов и генерирует HTML карты.
+Генерирует HTML карту на основе folium с переключаемыми слоями топлива.
 """
 
 import sys
@@ -12,49 +12,57 @@ def install_dependencies():
     """Устанавливает необходимые зависимости."""
     print("Установка зависимостей...")
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        # Устанавливаем основные зависимости
+        subprocess.check_call([sys.executable, "-m", "pip", "install", 
+                             "folium", "branca", "pandas", "--break-system-packages"])
         print("Зависимости установлены успешно!")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Ошибка установки зависимостей: {e}")
         return False
 
-def run_region_mapping():
-    """Запускает создание маппинга регионов."""
-    print("\n" + "="*50)
-    print("СОЗДАНИЕ МАППИНГА РЕГИОНОВ")
-    print("="*50)
-    
-    try:
-        subprocess.check_call([sys.executable, "visualizations/region_mapping.py"])
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Ошибка создания маппинга: {e}")
-        return False
-
 def run_map_generation():
     """Запускает генерацию карт."""
     print("\n" + "="*50)
-    print("СОЗДАНИЕ ИНТЕРАКТИВНЫХ КАРТ")
+    print("СОЗДАНИЕ ИНТЕРАКТИВНОЙ КАРТЫ")
     print("="*50)
     
     try:
         subprocess.check_call([sys.executable, "visualizations/fuel_price_map.py"])
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Ошибка создания карт: {e}")
+        print(f"Ошибка создания карты: {e}")
         return False
 
 def main():
     """Основная функция."""
-    print("Генератор карт с ценами на топливо")
-    print("=" * 50)
+    print("Генератор карт с ценами на топливо (обновлённая версия)")
+    print("=" * 60)
     
     # Проверяем наличие необходимых файлов
     required_files = [
-        "data/geojson/russia_reg v2.geojson",
         "regional_prices_20250707_145425.json"
     ]
+    
+    # Проверяем geojson файл в разных местах
+    geojson_paths = [
+        "data/geojson/russia_reg v2.geojson",
+        "src/russia_reg v2.geojson"
+    ]
+    
+    geojson_found = False
+    for geojson_path in geojson_paths:
+        if Path(geojson_path).exists():
+            geojson_found = True
+            print(f"✅ Найден файл границ: {geojson_path}")
+            break
+    
+    if not geojson_found:
+        print("❌ ОШИБКА: Не найден файл с границами регионов!")
+        print("Ожидаемые расположения:")
+        for path in geojson_paths:
+            print(f"  - {path}")
+        return False
     
     missing_files = []
     for file_path in required_files:
@@ -62,37 +70,39 @@ def main():
             missing_files.append(file_path)
     
     if missing_files:
-        print("ОШИБКА: Отсутствуют необходимые файлы:")
+        print("❌ ОШИБКА: Отсутствуют необходимые файлы:")
         for file_path in missing_files:
             print(f"  - {file_path}")
-        print("\nУбедитесь, что файлы находятся в правильных местах:")
-        print("  - Файл russia_reg v2.geojson должен быть в data/geojson/")
-        print("  - Файл с ценами на топливо должен быть в корне проекта")
+        print("\nУбедитесь, что файл с ценами находится в корне проекта")
         return False
+    
+    print("✅ Все необходимые файлы найдены")
     
     # Устанавливаем зависимости
     if not install_dependencies():
         return False
     
-    # Создаем маппинг регионов
-    if not run_region_mapping():
-        return False
-    
-    # Генерируем карты
+    # Генерируем карту
     if not run_map_generation():
         return False
     
-    print("\n" + "="*50)
-    print("УСПЕШНО ЗАВЕРШЕНО!")
-    print("="*50)
+    print("\n" + "="*60)
+    print("🎉 УСПЕШНО ЗАВЕРШЕНО!")
+    print("="*60)
     
-    # Показываем созданные файлы
+    # Показываем созданный файл
     maps_dir = Path("data/maps")
     if maps_dir.exists():
-        print("\nСозданные карты:")
-        for map_file in maps_dir.glob("*.html"):
-            print(f"  - {map_file}")
-            print(f"    Откройте в браузере: file://{map_file.absolute()}")
+        print("\n📍 Созданная карта:")
+        map_file = maps_dir / "fuel_price_interactive_map.html"
+        if map_file.exists():
+            print(f"   {map_file}")
+            print(f"🌐 Откройте в браузере: file://{map_file.absolute()}")
+            print("\n🔧 Функции карты:")
+            print("   • Переключение между видами топлива через контроллер слоёв")
+            print("   • Поиск регионов в левом верхнем углу")
+            print("   • Клик на регион для просмотра цен")
+            print("   • Стабильные границы при масштабировании")
     
     return True
 
