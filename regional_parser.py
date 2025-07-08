@@ -2,6 +2,7 @@
 """
 Региональный парсер цен на топливо
 Использует интегрированную архитектуру проекта парсеров АЗС
+Поддерживает историю региональных цен с организацией по датам
 """
 import argparse
 import sys
@@ -12,6 +13,7 @@ from loguru import logger
 
 from src.orchestrator import GasStationOrchestrator
 from src.parsers.russiabase_parser import RussiaBaseRegionalParser
+from src.regional_history_manager import RegionalHistoryManager
 from config import GAS_STATION_NETWORKS, REGIONS_CONFIG
 
 
@@ -37,6 +39,7 @@ def parse_arguments():
   python regional_parser.py --regions 77 78 50      # Парсить конкретные регионы (Москва, СПб, МО)
   python regional_parser.py --max-regions 10        # Ограничить до 10 регионов
   python regional_parser.py --list-regions          # Показать доступные регионы
+  python regional_parser.py --all-regions --disable-history  # Без сохранения в историю
         """
     )
     
@@ -86,6 +89,19 @@ def parse_arguments():
         "--verbose",
         action="store_true",
         help="Подробное логирование"
+    )
+    
+    parser.add_argument(
+        "--enable-history",
+        action="store_true",
+        default=True,
+        help="Сохранять данные в систему истории (по умолчанию включено)"
+    )
+    
+    parser.add_argument(
+        "--disable-history",
+        action="store_true",
+        help="Отключить сохранение в систему истории"
     )
     
     return parser.parse_args()
@@ -187,7 +203,7 @@ def run_regional_parsing_standalone(args):
     print_regional_results(results, end_time - start_time)
     
     # Сохраняем в файлы
-    save_regional_data(results)
+    save_regional_data(results, enable_history=not args.disable_history)
     
     return len(results) > 0
 
@@ -476,12 +492,35 @@ def save_regional_csv_report(results, filename):
         logger.error(f"Ошибка создания CSV отчета: {e}")
 
 
-def save_regional_data(results):
+def save_regional_data(results, enable_history: bool = True):
     """Сохраняет данные в файлы (JSON, Excel и CSV) с правильным неймингом по полноте выгрузки.
-    Использует систему именования по аналогии с АЗС."""
+    Использует систему именования по аналогии с АЗС.
+    
+    Args:
+        results: Результаты парсинга региональных цен
+        enable_history: Если True, сохраняет данные в систему истории
+    """
     if not results:
         return
     
+    # Сохранение в систему истории (новый способ)
+    if enable_history:
+        try:
+            history_manager = RegionalHistoryManager()
+            history_result = history_manager.save_regional_data_with_history(results)
+            
+            logger.info(f"[HISTORY] ✅ Данные сохранены в систему истории")
+            logger.info(f"[HISTORY] 📁 Папка: {history_result.get('history_json', 'N/A')}")
+            if 'metadata' in history_result:
+                completeness = history_result['metadata'].get('completeness', 'UNKNOWN')
+                regions_count = history_result['metadata'].get('successful_regions', 0)
+                logger.info(f"[HISTORY] 📊 Полнота: {completeness} ({regions_count} регионов)")
+            
+        except Exception as e:
+            logger.error(f"[HISTORY] ❌ Ошибка сохранения в историю: {e}")
+            logger.info(f"[HISTORY] 📝 Продолжаем с обычным сохранением...")
+    
+    # Сохранение в корневую папку (старый способ для совместимости)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Определяем полноту выгрузки
@@ -502,7 +541,7 @@ def save_regional_data(results):
         prefix = f"regions_partial_{successful_count}reg"
         file_type = "ЧАСТИЧНАЯ"
     
-    # Сохраняем в JSON
+    # Сохраняем в JSON (корневая папка для совместимости)
     json_filename = f"{prefix}_{timestamp}.json"
     
     json_data = []
@@ -574,6 +613,9 @@ def main():
         if success:
             print(f"\n[OK] Парсинг завершен успешно: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("[FOLDER] Результаты сохранены в текущей директории")
+            if not args.disable_history:
+                print("[HISTORY] Данные также сохранены в систему истории: data/regional_history/")
+                print("[HISTORY] Для анализа истории используйте: python src/history_utils.py --help")
         else:
             print("\n[ERROR] Парсинг завершился с ошибками")
             sys.exit(1)
