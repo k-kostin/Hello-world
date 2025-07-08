@@ -56,6 +56,11 @@ class FuelPriceMapGenerator:
         # Создаем копию геоданных
         gdf_with_prices = self.gdf.copy()
         
+        # Преобразуем все временные столбцы в строки для избежания проблем с JSON
+        for col in gdf_with_prices.columns:
+            if pd.api.types.is_datetime64_any_dtype(gdf_with_prices[col]):
+                gdf_with_prices[col] = gdf_with_prices[col].astype(str)
+        
         # Добавляем колонки для цен
         gdf_with_prices['fuel_price'] = np.nan
         gdf_with_prices['fuel_type'] = fuel_type
@@ -122,8 +127,7 @@ class FuelPriceMapGenerator:
                 stroke_width=1,
                 stroke_color='black',
                 stroke_opacity=0.8,
-                info_mode='on_hover',  # Показывать информацию при наведении
-                popup=['region_info'],  # Колонка для всплывающих окон
+                info_mode='on_click',  # Показывать информацию при клике
                 style_column='fuel_price',  # Колонка для стилизации
                 legend_title=f"Цена {fuel_type} (руб/л)",
                 classification_method='quantiles',  # Метод классификации
@@ -137,8 +141,7 @@ class FuelPriceMapGenerator:
                 fill_opacity=0.3,
                 stroke_width=1,
                 stroke_color='black',
-                info_mode='on_hover',
-                popup=['region_info']
+                info_mode='on_click'
             )
             print("Предупреждение: нет данных о ценах для отображения")
         
@@ -175,8 +178,7 @@ class FuelPriceMapGenerator:
                     stroke_width=1,
                     stroke_color='black',
                     stroke_opacity=0.8,
-                    info_mode='on_hover',
-                    popup=['region_info'],
+                    info_mode='on_click',
                     style_column='fuel_price',
                     legend_title=f"Цена {fuel_type} (руб/л)",
                     classification_method='quantiles',
