@@ -129,13 +129,22 @@ class UnifiedFuelMapGenerator:
                 for fuel_type, price in sorted_fuels:
                     display_name = self.fuel_display_names.get(fuel_type, fuel_type)
                     color = self.fuel_colors.get(fuel_type, "#666")
+                    
+                    # Определяем правильные единицы измерения
+                    if fuel_type == "Газ":
+                        unit = "руб/м³"
+                    elif fuel_type == "Пропан":
+                        unit = "руб/кг"
+                    else:
+                        unit = "руб/л"
+                    
                     popup_html += f"""
                     <tr style='border-bottom: 1px solid #eee;'>
                         <td style='padding: 8px 15px 8px 0; font-weight: bold; font-size: 14px;'>
                             <span style='color: {color}; margin-right: 8px; font-size: 16px;'>●</span>{display_name}:
                         </td>
                         <td style='padding: 8px 0; text-align: right; font-weight: bold; color: #27ae60; font-size: 15px;'>
-                            {price:.2f} руб/л
+                            {price:.2f} {unit}
                         </td>
                     </tr>"""
                 
@@ -363,11 +372,17 @@ class UnifiedFuelMapGenerator:
         return m
 
 def find_price_file():
-    """Ищет файл с ценами, приоритет файлам all_regions."""
-    patterns = ["all_regions_*.json", "*all_regions*.json", "regional_prices_*.json"]
+    """Ищет файл с ценами, строгий приоритет полным выгрузкам всех регионов."""
+    patterns = [
+        "all_regions_*.json",           # Полные выгрузки всех регионов
+        "*_full_*.json",                # Файлы с пометкой "full"  
+        "*_complete_*.json",            # Файлы с пометкой "complete"
+        "regional_prices_*.json"        # Обычные файлы (только если нет полных)
+    ]
     
     best_file = None
     max_regions = 0
+    min_required_regions = 50  # Минимум для полной выгрузки
     
     for pattern in patterns:
         for file_path in glob.glob(pattern):
@@ -375,8 +390,14 @@ def find_price_file():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     count = sum(1 for item in data if item.get('status') == 'success')
-                    if count > max_regions:
+                    
+                    # Если нашли файл с достаточным количеством регионов - берем его
+                    if count >= min_required_regions and count > max_regions:
                         max_regions = count
+                        best_file = file_path
+                    elif not best_file and count > max_regions:
+                        # Если полных нет, берем лучший из имеющихся
+                        max_regions = count 
                         best_file = file_path
             except:
                 continue

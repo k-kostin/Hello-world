@@ -254,7 +254,14 @@ def print_regional_results(results, duration):
             avg_price = sum(prices) / len(prices)
             min_price = min(prices)
             max_price = max(prices)
-            print(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} руб/л")
+            # Определяем правильные единицы измерения
+            if fuel_type == "Газ":
+                unit = "руб/м³"
+            elif fuel_type == "Пропан":
+                unit = "руб/кг"
+            else:
+                unit = "руб/л"
+            print(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} {unit}")
     
     print(f"\n[TABLE] Топ-10 регионов по ценам:")
     print("-" * 130)
@@ -300,7 +307,7 @@ def print_orchestrator_summary(summary, duration):
         net_summary = summary['networks_summary']['regional_prices']
         print(f"[LOC] Регионов: {net_summary['cities']}")
         print(f"[FUEL] Типов топлива: {net_summary['fuel_types']}")
-        print(f"[PRICE] Средняя цена: {net_summary['avg_price']:.2f} руб/л")
+        print(f"[PRICE] Средняя цена: {net_summary['avg_price']:.2f} руб/ед.")
     
     if summary['errors']:
         print(f"\n[WARNING] Ошибки:")
@@ -470,14 +477,29 @@ def save_regional_csv_report(results, filename):
 
 
 def save_regional_data(results):
-    """Сохраняет данные в файлы (JSON, Excel и CSV)"""
+    """Сохраняет данные в файлы (JSON, Excel и CSV) с правильным неймингом по полноте"""
     if not results:
         return
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # Определяем полноту выгрузки
+    successful_count = len([r for r in results if r.status == 'success'])
+    
+    # Система нейминга по полноте выгрузки
+    if successful_count >= 80:  # Почти все регионы
+        prefix = f"all_regions_full_{successful_count}reg"
+    elif successful_count >= 50:  # Большинство регионов
+        prefix = f"all_regions_major_{successful_count}reg"
+    elif successful_count >= 20:  # Средняя выгрузка
+        prefix = f"regional_prices_medium_{successful_count}reg"
+    elif successful_count >= 10:  # Малая выгрузка
+        prefix = f"regional_prices_small_{successful_count}reg"
+    else:  # Тестовая/демо выгрузка
+        prefix = f"regional_prices_demo_{successful_count}reg"
+    
     # Сохраняем в JSON
-    json_filename = f"regional_prices_{timestamp}.json"
+    json_filename = f"{prefix}_{timestamp}.json"
     
     json_data = []
     for result in results:
@@ -494,16 +516,19 @@ def save_regional_data(results):
         json.dump(json_data, f, ensure_ascii=False, indent=2)
     
     logger.info(f"[SAVE] Данные сохранены в JSON: {json_filename}")
+    logger.info(f"[NAMING] Тип выгрузки: {prefix.split('_')[0]} ({successful_count} из ~85 регионов)")
     
-    # Сохраняем в Excel
-    excel_filename = f"regional_prices_{timestamp}.xlsx"
+    # Сохраняем в Excel с тем же префиксом
+    excel_filename = f"{prefix}_{timestamp}.xlsx"
     save_regional_excel_report(results, excel_filename)
-    
     logger.info(f"[SAVE] Данные сохранены в Excel: {excel_filename}")
     
-    # Сохраняем в CSV
-    csv_filename = f"regional_prices_{timestamp}.csv"
+    # Сохраняем в CSV с тем же префиксом  
+    csv_filename = f"{prefix}_{timestamp}.csv"
     save_regional_csv_report(results, csv_filename)
+    logger.info(f"[SAVE] Данные сохранены в CSV: {csv_filename}")
+    
+
 
 
 def main():
