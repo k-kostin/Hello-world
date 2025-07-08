@@ -372,17 +372,16 @@ class UnifiedFuelMapGenerator:
         return m
 
 def find_price_file():
-    """Ищет файл с ценами, строгий приоритет полным выгрузкам всех регионов."""
+    """Ищет файл с ценами, СТРОГИЙ приоритет ТОЛЬКО полным выгрузкам всех регионов."""
     patterns = [
-        "all_regions_*.json",           # Полные выгрузки всех регионов
-        "*_full_*.json",                # Файлы с пометкой "full"  
-        "*_complete_*.json",            # Файлы с пометкой "complete"
-        "regional_prices_*.json"        # Обычные файлы (только если нет полных)
+        "all_regions_*.json",           # ТОЛЬКО полные выгрузки всех регионов (>=80 регионов)
     ]
     
     best_file = None
     max_regions = 0
-    min_required_regions = 50  # Минимум для полной выгрузки
+    min_required_regions = 80  # СТРОГО: минимум 80 регионов для полной выгрузки
+    
+    print(f"[VISUAL] Поиск файлов с ПОЛНОЙ выгрузкой региональных цен (>={min_required_regions} регионов)...")
     
     for pattern in patterns:
         for file_path in glob.glob(pattern):
@@ -391,18 +390,53 @@ def find_price_file():
                     data = json.load(f)
                     count = sum(1 for item in data if item.get('status') == 'success')
                     
-                    # Если нашли файл с достаточным количеством регионов - берем его
+                    print(f"[CHECK] {file_path}: {count} регионов")
+                    
+                    # СТРОГО: принимаем только файлы с полной выгрузкой
                     if count >= min_required_regions and count > max_regions:
                         max_regions = count
                         best_file = file_path
-                    elif not best_file and count > max_regions:
-                        # Если полных нет, берем лучший из имеющихся
-                        max_regions = count 
-                        best_file = file_path
+                    elif count < min_required_regions:
+                        print(f"[REJECT] {file_path}: недостаточно регионов ({count} < {min_required_regions})")
+            except Exception as e:
+                print(f"[ERROR] Ошибка чтения {file_path}: {e}")
+                continue
+    
+    # Если нашли полную выгрузку - возвращаем её
+    if best_file and max_regions >= min_required_regions:
+        print(f"[SUCCESS] Файл для визуализации: {best_file} ({max_regions} регионов)")
+        return best_file, max_regions
+    
+    # Если полной выгрузки нет - отклоняем частичные файлы и показываем инструкцию
+    print(f"[FAIL] НЕ НАЙДЕН файл с полной выгрузкой региональных цен!")
+    print(f"[REQUIRE] Для создания карты нужен файл с полной выгрузкой (>={min_required_regions} регионов)")
+    
+    # Ищем частичные выгрузки только для информирования
+    partial_patterns = [
+        "regions_*.json",
+        "regional_prices_*.json"
+    ]
+    
+    partial_files = []
+    for pattern in partial_patterns:
+        for file_path in glob.glob(pattern):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    count = sum(1 for item in data if item.get('status') == 'success')
+                    partial_files.append((file_path, count))
             except:
                 continue
     
-    return best_file, max_regions
+    if partial_files:
+        print(f"[INFO] Найдены файлы с частичными выгрузками (НЕ подходят для визуализации):")
+        for file_path, count in sorted(partial_files, key=lambda x: x[1], reverse=True):
+            print(f"  - {file_path}: {count} регионов (недостаточно)")
+    
+    print(f"[SOLUTION] Для получения полной выгрузки запустите:")
+    print(f"  python regional_parser.py --all-regions")
+    
+    return None, 0
 
 def main():
     """Основная функция."""
@@ -412,14 +446,17 @@ def main():
         print("[ERROR] Файл границ регионов не найден")
         return
     
-    # Поиск файла с ценами
+    # Поиск файла с ценами - ТОЛЬКО полные выгрузки
     prices_path, region_count = find_price_file()
     
-    if not prices_path:
-        print("[ERROR] Файл с ценами не найден")
+    if not prices_path or region_count == 0:
+        print("[ERROR] ВИЗУАЛИЗАЦИЯ ОСТАНОВЛЕНА - нет файла с полной выгрузкой региональных цен")
+        print("[REQUIRE] Нужен файл с полной выгрузкой всех регионов (>=80 регионов)")
+        print("[ACTION] Запустите: python regional_parser.py --all-regions")
         return
     
     print(f"[INFO] Используется файл: {prices_path} ({region_count} регионов)")
+    print(f"[OK] Полная выгрузка найдена - создаем карту...")
     
     generator = UnifiedFuelMapGenerator(geojson_path, prices_path)
     generator.load_data()

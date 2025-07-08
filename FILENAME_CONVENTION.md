@@ -6,7 +6,7 @@ This document describes the naming convention used for gas station data files ge
 
 The system now uses intelligent filename generation based on the scope of networks requested for parsing. This provides clear identification of what data is contained in each file.
 
-## Naming Patterns
+## Gas Station Networks Naming Patterns
 
 ### 1. All Networks File
 **Pattern:** `all_gas_stations_YYYYMMDD_HHMMSS.xlsx`
@@ -38,11 +38,46 @@ The system now uses intelligent filename generation based on the scope of networ
 
 **Example:** `gas_stations_20250107_143055.xlsx`
 
+## Regional Prices Naming Patterns
+
+### 1. All Regions File (Complete Export)
+**Pattern:** `all_regions_YYYYMMDD_HHMMSS.json`
+
+**When used:** Only when ALL available regions are successfully parsed (>=80 regions out of ~85 total)
+
+**Example:** `all_regions_20250107_143055.json`
+
+**Usage:** ONLY these files are used for map visualization
+
+### 2. Large Regional Export  
+**Pattern:** `regions_XXofYY_YYYYMMDD_HHMMSS.json`
+
+**When used:** When 60-79 regions are successfully parsed (large but not complete)
+
+**Example:** `regions_75of85_20250107_143055.json`
+
+**Usage:** NOT suitable for map visualization
+
+### 3. Partial Regional Export
+**Pattern:** `regions_partial_XXreg_YYYYMMDD_HHMMSS.json`
+
+**When used:** When fewer than 60 regions are successfully parsed
+
+**Example:** `regions_partial_25reg_20250107_143055.json`
+
+**Usage:** NOT suitable for map visualization
+
 ## Timestamp Format
 
 All files use the same timestamp format:
 - **YYYYMMDD:** Date (e.g., 20250107 for January 7, 2025)
 - **HHMMSS:** Time in 24-hour format (e.g., 143055 for 14:30:55)
+
+## Visualization Requirements
+
+✅ **Map Visualization:** ONLY works with `all_regions_*.json` files (complete regional exports)
+
+❌ **Rejected for Maps:** All partial exports are rejected to ensure complete data coverage
 
 ## Backward Compatibility
 
@@ -53,11 +88,11 @@ The data loading functions support both the new naming convention and legacy fil
 
 ## Benefits
 
-✅ **Clear Scope Identification:** Filename immediately indicates whether you have all networks or a subset
+✅ **Clear Scope Identification:** Filename immediately indicates whether you have complete or partial data
 
-✅ **Network Visibility:** For small subsets, specific network names are visible in the filename
+✅ **Quality Control:** Map generation only works with complete datasets
 
-✅ **No Confusion:** `all_gas_stations_` prefix is reserved only for truly complete datasets
+✅ **No Confusion:** `all_regions_` prefix is reserved only for truly complete regional datasets
 
 ✅ **Organized File Management:** Easy to identify and manage different types of data exports
 
@@ -66,4 +101,6 @@ The data loading functions support both the new naming convention and legacy fil
 - Network names in filenames are sorted alphabetically for consistency
 - The system automatically detects which networks were successfully parsed
 - Files are only labeled as "all_gas_stations" if ALL configured networks were included
+- Files are only labeled as "all_regions" if 80+ regions were successfully parsed
 - Loading functions prioritize newer files based on timestamp extraction
+- Map visualization strictly requires complete datasets for accurate representation
