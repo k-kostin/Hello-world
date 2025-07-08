@@ -81,30 +81,45 @@ class FuelPriceMapGenerator:
         """Нормализует название региона для поиска."""
         import re
         
-        # Словарь для сопоставления особых случаев
+        # Словарь для прямого сопоставления особых случаев
         special_mappings = {
             'Москва': 'Москва',
+            'г. Москва': 'Москва',
             'Санкт-Петербург': 'Санкт-Петербург',
             'Севастополь': 'Севастополь',
             'Республика Крым': 'Республика Крым',
             'Ненецкий автономный округ': 'Ненецкий автономный округ',
             'Ханты-Мансийский автономный округ — Югра': 'Ханты-Мансийский автономный округ',
+            'Ханты-Мансийский автономный округ - Югра': 'Ханты-Мансийский автономный округ',
             'Ямало-Ненецкий автономный округ': 'Ямало-Ненецкий автономный округ',
             'Чукотский автономный округ': 'Чукотский автономный округ',
             'Еврейская автономная область': 'Еврейская автономная область',
+            'Камчатский край': 'Камчатский край',
+            'Тамбовская область': 'Тамбовская область',
         }
         
+        # Сначала проверяем прямые совпадения
         if name in special_mappings:
             return special_mappings[name]
         
-        # Стандартная нормализация
-        name = name.strip()
-        name = re.sub(r'\s+область$', '', name)
-        name = re.sub(r'\s+край$', '', name)
-        name = re.sub(r'^Республика\s+', '', name)
-        name = re.sub(r'\s+республика$', '', name)
+        # Затем стандартная нормализация (более осторожная)
+        normalized = name.strip()
         
-        return name
+        # Не применяем нормализацию к коротким названиям
+        if len(normalized.split()) <= 2:
+            return normalized
+            
+        # Убираем окончания только если они есть в конце
+        if normalized.endswith(' область'):
+            normalized = normalized[:-8]
+        elif normalized.endswith(' край'):
+            normalized = normalized[:-5]
+        elif normalized.startswith('Республика '):
+            normalized = normalized[11:]
+        elif normalized.endswith(' республика'):
+            normalized = normalized[:-11]
+        
+        return normalized
     
     def find_region_prices(self, region_name: str) -> Optional[Dict]:
         """Находит цены для региона по имени."""
@@ -113,9 +128,20 @@ class FuelPriceMapGenerator:
             return self.price_data[region_name]
         
         # Нормализованное сопоставление
-        normalized = self.normalize_region_name(region_name)
+        normalized_input = self.normalize_region_name(region_name)
         for price_region, prices in self.price_data.items():
-            if self.normalize_region_name(price_region) == normalized:
+            normalized_price = self.normalize_region_name(price_region)
+            if normalized_price == normalized_input:
+                return prices
+        
+        # Дополнительный поиск по частичному совпадению (без учета регистра)
+        region_lower = region_name.lower()
+        for price_region, prices in self.price_data.items():
+            price_lower = price_region.lower()
+            if region_lower == price_lower:
+                return prices
+            # Проверяем вхождение для случаев типа "Ханты-Мансийский автономный округ"
+            if (region_lower in price_lower or price_lower in region_lower) and len(region_lower) > 5:
                 return prices
         
         return None
@@ -212,15 +238,27 @@ class FuelPriceMapGenerator:
                 props["tooltip_html"] = "".join(html)
                 props["popup_html"] = "".join(html)
             
-            # Функция стилизации регионов - без цветной покраски
+            # Функция стилизации регионов - добавляем цветную заливку
             def style_fn(feat, fuel_type=fuel_type):
                 has_price = feat["properties"].get("has_price", False)
-                return {
-                    "fillColor": "#e0e0e0",  # Серый цвет для всех регионов
-                    "color": "#000000",      # Чёрный цвет границы
-                    "weight": 0.5,           # Толщина границы
-                    "fillOpacity": 0.6 if has_price else 0.1  # Прозрачность в зависимости от наличия данных
-                }
+                base_color = self.fuel_colors.get(fuel_type, "#e0e0e0")
+                
+                if has_price:
+                    # Если есть данные - используем цвет топлива с прозрачностью
+                    return {
+                        "fillColor": base_color,
+                        "color": "#333333",
+                        "weight": 1,
+                        "fillOpacity": 0.7
+                    }
+                else:
+                    # Если нет данных - светло-серый цвет
+                    return {
+                        "fillColor": "#f0f0f0",
+                        "color": "#cccccc", 
+                        "weight": 0.5,
+                        "fillOpacity": 0.3
+                    }
             
             # Создаём слой GeoJSON
             gj = GeoJson(
@@ -294,6 +332,13 @@ class FuelPriceMapGenerator:
             color: black !important;
             font-size: 18px !important;
           }
+          
+          /* Hover эффект для регионов */
+          .leaflet-interactive:hover {
+            stroke-width: 3 !important;
+            stroke: #000000 !important;
+            fill-opacity: 0.9 !important;
+          }
         </style>
         """
         m.get_root().html.add_child(Element(css))
@@ -355,7 +400,7 @@ class FuelPriceMapGenerator:
         """
         m.get_root().html.add_child(Element(js_attrib))
         
-        # Скрипт функционала поиска
+        # Скрипт функционала поиска и hover эффектов
         js_search = f"""
         <script>
         setTimeout(function() {{
@@ -366,6 +411,31 @@ class FuelPriceMapGenerator:
           map.eachLayer(layer => {{
             if (layer.feature && layer.feature.properties && layer.feature.properties.name) {{
               regionNames.add(layer.feature.properties.name);
+              
+              // Добавляем hover эффекты для каждого слоя
+              if (layer.feature) {{
+                const originalStyle = layer.options.style ? layer.options.style(layer.feature) : {{}};
+                
+                layer.on('mouseover', function(e) {{
+                  const layer = e.target;
+                  const hasPrice = layer.feature.properties.has_price;
+                  
+                  layer.setStyle({{
+                    weight: 3,
+                    color: '#000000',
+                    fillOpacity: hasPrice ? 0.9 : 0.5
+                  }});
+                  
+                  if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {{
+                    layer.bringToFront();
+                  }}
+                }});
+                
+                layer.on('mouseout', function(e) {{
+                  const layer = e.target;
+                  layer.setStyle(originalStyle);
+                }});
+              }}
             }}
           }});
           const regionsList = Array.from(regionNames).sort();
@@ -466,32 +536,109 @@ class FuelPriceMapGenerator:
         return m
 
 def find_price_file():
-    """Ищет файл с ценами на топливо."""
+    """Ищет файл с ценами на топливо с наибольшим количеством данных."""
     import glob
+    import json
     
-    # Возможные паттерны имен файлов
+    # Возможные паттерны имен файлов (в порядке приоритета)
     patterns = [
-        "regional_prices_*.json",
+        "all_regions_*.json",           # Приоритет файлам со всеми регионами
+        "*all_regions*.json",           # Альтернативные названия
+        "regional_prices_*.json",       # Стандартные файлы
         "prices_*.json", 
         "fuel_prices_*.json"
     ]
     
+    best_file = None
+    max_regions = 0
+    
+    print("Поиск файла с данными о ценах...")
+    
     for pattern in patterns:
         files = glob.glob(pattern)
-        if files:
-            # Возвращаем самый новый файл
-            return max(files, key=lambda x: Path(x).stat().st_mtime)
+        for file_path in files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Считаем регионы со статусом success
+                    success_count = sum(1 for item in data if item.get('status') == 'success')
+                    print(f"  {file_path}: {success_count} регионов")
+                    
+                    # Бонус для файлов с "all_regions" в названии
+                    priority_bonus = 1000 if "all_regions" in file_path.lower() else 0
+                    
+                    if success_count + priority_bonus > max_regions:
+                        max_regions = success_count + priority_bonus
+                        best_file = file_path
+            except Exception as e:
+                print(f"  {file_path}: ошибка чтения ({e})")
+                continue
     
-    return None
+    if best_file:
+        print(f"Выбран файл: {best_file}")
+    else:
+        print("Файлы с данными не найдены")
+    
+    return best_file
+
+def check_and_parse_all_regions():
+    """Проверяет количество регионов и при необходимости запускает парсинг всех регионов."""
+    import subprocess
+    import sys
+    
+    prices_path = find_price_file()
+    
+    if prices_path:
+        try:
+            with open(prices_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                success_count = sum(1 for item in data if item.get('status') == 'success')
+                
+                print(f"Найден файл с {success_count} регионами")
+                
+                # Если регионов мало, предлагаем запустить полный парсинг
+                if success_count < 20:
+                    print(f"\n⚠️  В файле только {success_count} регионов из ~85 возможных")
+                    print("💡 Рекомендуется получить данные по всем регионам")
+                    
+                    response = input("Запустить парсинг всех регионов? (y/N): ").strip().lower()
+                    if response in ['y', 'yes', 'да']:
+                        print("\n🚀 Запуск парсинга всех регионов...")
+                        print("⏳ Это может занять несколько минут...")
+                        
+                        try:
+                            result = subprocess.run([
+                                sys.executable, "regional_parser.py", 
+                                "--all-regions", "--max-regions", "50"
+                            ], capture_output=True, text=True, timeout=300)
+                            
+                            if result.returncode == 0:
+                                print("✅ Парсинг завершен успешно!")
+                                # Обновляем путь к файлу
+                                new_prices_path = find_price_file()
+                                if new_prices_path and new_prices_path != prices_path:
+                                    print(f"Новый файл: {new_prices_path}")
+                                    return new_prices_path
+                            else:
+                                print(f"❌ Ошибка парсинга: {result.stderr}")
+                                
+                        except subprocess.TimeoutExpired:
+                            print("⏰ Превышено время ожидания парсинга")
+                        except Exception as e:
+                            print(f"❌ Ошибка запуска парсера: {e}")
+                
+        except Exception as e:
+            print(f"Ошибка чтения файла: {e}")
+    
+    return prices_path
 
 def main():
     """Основная функция для создания карт."""
     
     # Пути к файлам
     geojson_path = "data/geojson/russia_reg v2.geojson"
-    prices_path = find_price_file()
     
-    # Проверяем наличие файлов
+    # Проверяем наличие geojson файла
     if not Path(geojson_path).exists():
         print(f"Ошибка: файл {geojson_path} не найден")
         
@@ -503,12 +650,15 @@ def main():
         else:
             return
     
+    # Ищем файл с ценами и при необходимости запускаем парсинг
+    prices_path = check_and_parse_all_regions()
+    
     if not prices_path or not Path(prices_path).exists():
         print("Ошибка: файл с ценами не найден")
-        print("Ожидаемые файлы: regional_prices_*.json, prices_*.json, fuel_prices_*.json")
+        print("Ожидаемые файлы: all_regions_*.json, regional_prices_*.json, prices_*.json")
         return
     
-    print(f"Используется файл с ценами: {prices_path}")
+    print(f"\nИспользуется файл с ценами: {prices_path}")
     
     # Создаем генератор карт
     generator = FuelPriceMapGenerator(geojson_path, prices_path)
