@@ -93,7 +93,7 @@ def parse_arguments():
 
 def list_available_regions():
     """Выводит список доступных регионов"""
-    print("\n🗺️  Получение списка доступных регионов...")
+    print("\n[INFO] Получение списка доступных регионов...")
     print("=" * 60)
     
     try:
@@ -108,18 +108,18 @@ def list_available_regions():
             # Группируем регионы для лучшего отображения
             popular_ids = REGIONS_CONFIG.get('default_regions', [77, 78, 50, 40, 23, 66, 96])
             
-            print("📍 Популярные регионы:")
+            print("[POPULAR] Популярные регионы:")
             for region_id, region_name in sorted(regions.items()):
                 if region_id in popular_ids:
-                    print(f"  {region_id:3d}: {region_name} ⭐")
+                    print(f"  {region_id:3d}: {region_name} [*]")
             
-            print("\n📍 Все остальные регионы:")
+            print("\n[ALL] Все остальные регионы:")
             for region_id, region_name in sorted(regions.items()):
                 if region_id not in popular_ids:
                     print(f"  {region_id:3d}: {region_name}")
             
         else:
-            print("❌ Не удалось получить список регионов")
+            print("[ERROR] Не удалось получить список регионов")
             
     except Exception as e:
         logger.error(f"Ошибка при получении списка регионов: {e}")
@@ -127,7 +127,7 @@ def list_available_regions():
 
 def run_regional_parsing_standalone(args):
     """Запуск парсинга в standalone режиме"""
-    logger.info("🚀 Запуск регионального парсинга (standalone режим)")
+    logger.info("[RUN] Запуск регионального парсинга (standalone режим)")
     
     # Создаем конфигурацию
     config = {
@@ -194,7 +194,7 @@ def run_regional_parsing_standalone(args):
 
 def run_regional_parsing_orchestrated(args):
     """Запуск парсинга через оркестратор"""
-    logger.info("🚀 Запуск регионального парсинга (интегрированный режим)")
+    logger.info("[RUN] Запуск регионального парсинга (интегрированный режим)")
     
     # Обновляем конфигурацию регионального парсера
     regional_config = GAS_STATION_NETWORKS["regional_prices"].copy()
@@ -224,15 +224,15 @@ def run_regional_parsing_orchestrated(args):
 def print_regional_results(results, duration):
     """Выводит результаты регионального парсинга"""
     print("\n" + "=" * 80)
-    print("📊 РЕЗУЛЬТАТЫ РЕГИОНАЛЬНОГО ПАРСИНГА")
+    print("[STATS] РЕЗУЛЬТАТЫ РЕГИОНАЛЬНОГО ПАРСИНГА")
     print("=" * 80)
     
     if not results:
-        print("❌ Нет результатов")
+        print("[ERROR] Нет результатов")
         return
     
-    print(f"⏱️  Время выполнения: {duration}")
-    print(f"🗺️  Успешно обработано регионов: {len(results)}")
+    print(f"[TIME] Время выполнения: {duration}")
+    print(f"[STATS] Успешно обработано регионов: {len(results)}")
     
     # Группируем цены по типам топлива
     fuel_stats = {}
@@ -249,14 +249,14 @@ def print_regional_results(results, duration):
                     fuel_stats[fuel_type].append(price)
     
     if fuel_stats:
-        print(f"💰 Средние цены по России:")
+        print(f"[PRICE] Средние цены по России:")
         for fuel_type, prices in fuel_stats.items():
             avg_price = sum(prices) / len(prices)
             min_price = min(prices)
             max_price = max(prices)
             print(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} руб/л")
     
-    print(f"\n📋 Топ-10 регионов по ценам:")
+    print(f"\n[TABLE] Топ-10 регионов по ценам:")
     print("-" * 130)
     print(f"{'Регион':<25} {'АИ-92':<7} {'АИ-92+':<7} {'АИ-95':<7} {'АИ-95+':<7} {'АИ-98':<7} {'АИ-98+':<7} {'АИ-100':<8} {'ДТ':<7} {'ДТ+':<7} {'Газ':<7} {'Пропан':<7}")
     print("-" * 130)
@@ -289,21 +289,21 @@ def print_regional_results(results, duration):
 def print_orchestrator_summary(summary, duration):
     """Выводит сводку от оркестратора"""
     print("\n" + "=" * 80)
-    print("📊 СВОДКА РЕГИОНАЛЬНОГО ПАРСИНГА (ОРКЕСТРАТОР)")
+    print("[STATS] СВОДКА РЕГИОНАЛЬНОГО ПАРСИНГА (ОРКЕСТРАТОР)")
     print("=" * 80)
-    print(f"⏱️  Время выполнения: {duration}")
-    print(f"📝 Общее количество записей: {summary['total_records']}")
-    print(f"✅ Успешно обработано: {summary['networks_parsed']}")
-    print(f"❌ Ошибок: {summary['networks_failed']}")
+    print(f"[TIME] Время выполнения: {duration}")
+    print(f"[LOG] Общее количество записей: {summary['total_records']}")
+    print(f"[OK] Успешно обработано: {summary['networks_parsed']}")
+    print(f"[ERROR] Ошибок: {summary['networks_failed']}")
     
     if 'regional_prices' in summary['networks_summary']:
         net_summary = summary['networks_summary']['regional_prices']
-        print(f"🗺️  Регионов: {net_summary['cities']}")
-        print(f"⛽ Типов топлива: {net_summary['fuel_types']}")
-        print(f"💰 Средняя цена: {net_summary['avg_price']:.2f} руб/л")
+        print(f"[LOC] Регионов: {net_summary['cities']}")
+        print(f"[FUEL] Типов топлива: {net_summary['fuel_types']}")
+        print(f"[PRICE] Средняя цена: {net_summary['avg_price']:.2f} руб/л")
     
     if summary['errors']:
-        print(f"\n⚠️  Ошибки:")
+        print(f"\n[WARNING] Ошибки:")
         for network, error in summary['errors'].items():
             print(f"  {network}: {error}")
 
@@ -461,7 +461,7 @@ def save_regional_csv_report(results, filename):
             df = df[cols + fuel_cols]
             
             df.to_csv(filename, index=False, encoding='utf-8-sig')
-            logger.info(f"📄 Данные сохранены в CSV: {filename}")
+            logger.info(f"[FILE] Данные сохранены в CSV: {filename}")
         else:
             logger.warning("Нет данных для сохранения в CSV")
             
@@ -493,13 +493,13 @@ def save_regional_data(results):
     with open(json_filename, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
     
-    logger.info(f"💾 Данные сохранены в JSON: {json_filename}")
+    logger.info(f"[SAVE] Данные сохранены в JSON: {json_filename}")
     
     # Сохраняем в Excel
     excel_filename = f"regional_prices_{timestamp}.xlsx"
     save_regional_excel_report(results, excel_filename)
     
-    logger.info(f"📊 Данные сохранены в Excel: {excel_filename}")
+    logger.info(f"[SAVE] Данные сохранены в Excel: {excel_filename}")
     
     # Сохраняем в CSV
     csv_filename = f"regional_prices_{timestamp}.csv"
@@ -520,7 +520,7 @@ def main():
             level="DEBUG"
         )
     
-    print("🏁 Региональный парсер цен на топливо")
+    print("=== Региональный парсер цен на топливо ===")
     print("=" * 60)
     
     # Показать список регионов
@@ -536,17 +536,17 @@ def main():
             success = run_regional_parsing_standalone(args)
         
         if success:
-            print(f"\n✅ Парсинг завершен успешно: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("📂 Результаты сохранены в текущей директории")
+            print(f"\n[OK] Парсинг завершен успешно: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print("[FOLDER] Результаты сохранены в текущей директории")
         else:
-            print("\n❌ Парсинг завершился с ошибками")
+            print("\n[ERROR] Парсинг завершился с ошибками")
             sys.exit(1)
             
     except KeyboardInterrupt:
-        logger.warning("\n⚠️ Парсинг прерван пользователем")
+        logger.warning("\n[WARNING] Парсинг прерван пользователем")
         sys.exit(130)
     except Exception as e:
-        logger.error(f"\n💥 Критическая ошибка: {e}")
+        logger.error(f"\n[CRASH] Критическая ошибка: {e}")
         sys.exit(1)
 
 
