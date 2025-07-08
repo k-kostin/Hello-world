@@ -81,7 +81,7 @@
 | 64 | Саратовская область | https://russiabase.ru/prices?region=64 |
 | 65 | Сахалинская область | https://russiabase.ru/prices?region=65 |
 | 66 | Свердловская область | https://russiabase.ru/prices?region=66 |
-| 85 | Севастополь | https://russiabase.ru/prices?region=85 |
+| 96 | Севастополь | https://russiabase.ru/prices?region=96 |
 | 67 | Смоленская область | https://russiabase.ru/prices?region=67 |
 | 26 | Ставропольский край | https://russiabase.ru/prices?region=26 |
 | 68 | Тамбовская область | https://russiabase.ru/prices?region=68 |
@@ -180,7 +180,7 @@ url = f"{base_url}?region={region_id}"
   {"id": 64, "name": "Саратовская область", "url": "https://russiabase.ru/prices?region=64"},
   {"id": 65, "name": "Сахалинская область", "url": "https://russiabase.ru/prices?region=65"},
   {"id": 66, "name": "Свердловская область", "url": "https://russiabase.ru/prices?region=66"},
-  {"id": 85, "name": "Севастополь", "url": "https://russiabase.ru/prices?region=85"},
+  {"id": 96, "name": "Севастополь", "url": "https://russiabase.ru/prices?region=96"},
   {"id": 67, "name": "Смоленская область", "url": "https://russiabase.ru/prices?region=67"},
   {"id": 26, "name": "Ставропольский край", "url": "https://russiabase.ru/prices?region=26"},
   {"id": 68, "name": "Тамбовская область", "url": "https://russiabase.ru/prices?region=68"},
