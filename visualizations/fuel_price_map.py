@@ -540,15 +540,19 @@ def find_price_file():
     import glob
     import json
     
-    # Возможные паттерны имен файлов
+    # Возможные паттерны имен файлов (в порядке приоритета)
     patterns = [
-        "regional_prices_*.json",
+        "all_regions_*.json",           # Приоритет файлам со всеми регионами
+        "*all_regions*.json",           # Альтернативные названия
+        "regional_prices_*.json",       # Стандартные файлы
         "prices_*.json", 
         "fuel_prices_*.json"
     ]
     
     best_file = None
     max_regions = 0
+    
+    print("Поиск файла с данными о ценах...")
     
     for pattern in patterns:
         files = glob.glob(pattern)
@@ -558,22 +562,83 @@ def find_price_file():
                     data = json.load(f)
                     # Считаем регионы со статусом success
                     success_count = sum(1 for item in data if item.get('status') == 'success')
-                    if success_count > max_regions:
-                        max_regions = success_count
+                    print(f"  {file_path}: {success_count} регионов")
+                    
+                    # Бонус для файлов с "all_regions" в названии
+                    priority_bonus = 1000 if "all_regions" in file_path.lower() else 0
+                    
+                    if success_count + priority_bonus > max_regions:
+                        max_regions = success_count + priority_bonus
                         best_file = file_path
-            except:
+            except Exception as e:
+                print(f"  {file_path}: ошибка чтения ({e})")
                 continue
     
+    if best_file:
+        print(f"Выбран файл: {best_file}")
+    else:
+        print("Файлы с данными не найдены")
+    
     return best_file
+
+def check_and_parse_all_regions():
+    """Проверяет количество регионов и при необходимости запускает парсинг всех регионов."""
+    import subprocess
+    import sys
+    
+    prices_path = find_price_file()
+    
+    if prices_path:
+        try:
+            with open(prices_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                success_count = sum(1 for item in data if item.get('status') == 'success')
+                
+                print(f"Найден файл с {success_count} регионами")
+                
+                # Если регионов мало, предлагаем запустить полный парсинг
+                if success_count < 20:
+                    print(f"\n⚠️  В файле только {success_count} регионов из ~85 возможных")
+                    print("💡 Рекомендуется получить данные по всем регионам")
+                    
+                    response = input("Запустить парсинг всех регионов? (y/N): ").strip().lower()
+                    if response in ['y', 'yes', 'да']:
+                        print("\n🚀 Запуск парсинга всех регионов...")
+                        print("⏳ Это может занять несколько минут...")
+                        
+                        try:
+                            result = subprocess.run([
+                                sys.executable, "regional_parser.py", 
+                                "--all-regions", "--max-regions", "50"
+                            ], capture_output=True, text=True, timeout=300)
+                            
+                            if result.returncode == 0:
+                                print("✅ Парсинг завершен успешно!")
+                                # Обновляем путь к файлу
+                                new_prices_path = find_price_file()
+                                if new_prices_path and new_prices_path != prices_path:
+                                    print(f"Новый файл: {new_prices_path}")
+                                    return new_prices_path
+                            else:
+                                print(f"❌ Ошибка парсинга: {result.stderr}")
+                                
+                        except subprocess.TimeoutExpired:
+                            print("⏰ Превышено время ожидания парсинга")
+                        except Exception as e:
+                            print(f"❌ Ошибка запуска парсера: {e}")
+                
+        except Exception as e:
+            print(f"Ошибка чтения файла: {e}")
+    
+    return prices_path
 
 def main():
     """Основная функция для создания карт."""
     
     # Пути к файлам
     geojson_path = "data/geojson/russia_reg v2.geojson"
-    prices_path = find_price_file()
     
-    # Проверяем наличие файлов
+    # Проверяем наличие geojson файла
     if not Path(geojson_path).exists():
         print(f"Ошибка: файл {geojson_path} не найден")
         
@@ -585,12 +650,15 @@ def main():
         else:
             return
     
+    # Ищем файл с ценами и при необходимости запускаем парсинг
+    prices_path = check_and_parse_all_regions()
+    
     if not prices_path or not Path(prices_path).exists():
         print("Ошибка: файл с ценами не найден")
-        print("Ожидаемые файлы: regional_prices_*.json, prices_*.json, fuel_prices_*.json")
+        print("Ожидаемые файлы: all_regions_*.json, regional_prices_*.json, prices_*.json")
         return
     
-    print(f"Используется файл с ценами: {prices_path}")
+    print(f"\nИспользуется файл с ценами: {prices_path}")
     
     # Создаем генератор карт
     generator = FuelPriceMapGenerator(geojson_path, prices_path)
