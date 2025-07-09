@@ -35,7 +35,7 @@ class GazpromParser(BaseParser):
     def _fetch_station_details(self, station_id: str) -> Dict[str, Any]:
         """Получает детальную информацию о станции включая цены"""
         url = self.api_base + self.config["station_detail_endpoint"].format(station_id=station_id)
-        logger.debug(f"Fetching station details: {url}")
+        logger.info(f"Fetching station details: {url}")
         
         response = self.session.get(url, timeout=TIMEOUT)
         response.raise_for_status()

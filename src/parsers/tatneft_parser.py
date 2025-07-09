@@ -33,7 +33,7 @@ class TatneftParser(BaseParser):
         if self._fuel_type_map is not None:
             return self._fuel_type_map
         url = self.api_base + self.fuel_types_endpoint
-        logger.debug(f"Fetching fuel types: {url}")
+        logger.info(f"Fetching fuel types: {url}")
         try:
             data = self._get_json(url)
             # ожидаемый формат: [{"id":30, "short_name":"АИ-92", ...}, ...]
@@ -92,7 +92,7 @@ class TatneftParser(BaseParser):
                     "fuel_type_map": fuel_type_map,
                 }
                 detailed_data.append(combined)
-                logger.debug(f"[{idx+1}/{len(stations)}] Обработана станция {station.get('id', 'N/A')}")
+                logger.info(f"[{idx+1}/{len(stations)}] Обработана станция {station.get('id', 'N/A')}")
             except Exception as e:
                 logger.warning(f"Ошибка обработки станции {station.get('id', 'N/A')}: {e}")
                 self.errors.append(f"station {station.get('id', 'N/A')}: {e}")
@@ -115,7 +115,7 @@ class TatneftParser(BaseParser):
 
         # Фильтруем станции из Беларуси
         if region == "Республика Беларусь":
-            logger.debug(f"Пропускаем станцию {station_id} из Беларуси")
+            logger.info(f"Пропускаем станцию {station_id} из Беларуси")
             return []
 
         # Формируем адрес если он пустой

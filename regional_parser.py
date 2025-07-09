@@ -132,10 +132,10 @@ def list_available_regions():
             print("\n[ALL] Все остальные регионы:")
             for region_id, region_name in sorted(regions.items()):
                 if region_id not in popular_ids:
-                    print(f"  {region_id:3d}: {region_name}")
+                    logger.info(f"  {region_id:3d}: {region_name}")
             
         else:
-            print("[ERROR] Не удалось получить список регионов")
+            logger.error("Не удалось получить список регионов")
             
     except Exception as e:
         logger.error(f"Ошибка при получении списка регионов: {e}")
@@ -200,7 +200,7 @@ def run_regional_parsing_standalone(args):
     end_time = datetime.now()
     
     # Выводим результаты
-    print_regional_results(results, end_time - start_time)
+    log_regional_results(results, end_time - start_time)
     
     # Сохраняем в файлы
     save_regional_data(results, enable_history=not args.disable_history)
@@ -230,11 +230,61 @@ def run_regional_parsing_orchestrated(args):
     
     if results:
         summary = orchestrator.get_summary()
-        print_orchestrator_summary(summary, end_time - start_time)
+        log_orchestrator_summary(summary, end_time - start_time)
         return True
     else:
         logger.error("Парсинг не дал результатов")
         return False
+
+
+def log_regional_results(results, duration):
+    """Логирует результаты регионального парсинга"""
+    logger.info("=" * 80)
+    logger.info("РЕЗУЛЬТАТЫ РЕГИОНАЛЬНОГО ПАРСИНГА")
+    logger.info("=" * 80)
+    
+    if not results:
+        logger.error("Нет результатов")
+        return
+    
+    logger.info(f"Время выполнения: {duration}")
+    logger.info(f"Успешно обработано регионов: {len(results)}")
+    
+    # Группируем цены по типам топлива
+    fuel_stats = {}
+    successful_regions = []
+    
+    for result in results:
+        if result.status == 'success' and result.fuel_prices:
+            successful_regions.append(result)
+            for fuel_type, price in result.fuel_prices.items():
+                if fuel_type != 'АИ-80':
+                    if fuel_type not in fuel_stats:
+                        fuel_stats[fuel_type] = []
+                    fuel_stats[fuel_type].append(price)
+    
+    if fuel_stats:
+        logger.info("Средние цены по России:")
+        for fuel_type, prices in fuel_stats.items():
+            avg_price = sum(prices) / len(prices)
+            min_price = min(prices)
+            max_price = max(prices)
+            unit = "руб/м³" if fuel_type == "Газ" else "руб/кг" if fuel_type == "Пропан" else "руб/л"
+            logger.info(f"  {fuel_type:10}: ср. {avg_price:.2f}, мин. {min_price:.2f}, макс. {max_price:.2f} {unit}")
+    
+    logger.info(f"Топ-10 регионов по ценам:")
+    for i, result in enumerate(successful_regions[:10], 1):
+        ai95 = result.fuel_prices.get("АИ-95", 0)
+        dt = result.fuel_prices.get("ДТ", 0)
+        price_info = f"{result.region_name}"
+        if ai95 > 0:
+            price_info += f" | АИ-95: {ai95:.2f}"
+        if dt > 0:
+            price_info += f" | ДТ: {dt:.2f}"
+        logger.info(f"  {i}. {price_info}")
+    
+    if len(successful_regions) > 10:
+        logger.info(f"... и еще {len(successful_regions) - 10} регионов")
 
 
 def print_regional_results(results, duration):
@@ -307,6 +357,28 @@ def print_regional_results(results, duration):
         print(f"... и еще {len(successful_regions) - 10} регионов")
     
     print("-" * 130)
+
+
+def log_orchestrator_summary(summary, duration):
+    """Логирует сводку оркестратора"""
+    logger.info("=" * 80)
+    logger.info("СВОДКА РЕГИОНАЛЬНОГО ПАРСИНГА (ОРКЕСТРАТОР)")
+    logger.info("=" * 80)
+    logger.info(f"Время выполнения: {duration}")
+    logger.info(f"Общее количество записей: {summary['total_records']}")
+    logger.info(f"Успешно обработано: {summary['networks_parsed']}")
+    logger.info(f"Ошибок: {summary['networks_failed']}")
+    
+    if 'regional_prices' in summary['networks_summary']:
+        net_summary = summary['networks_summary']['regional_prices']
+        logger.info(f"Регионов: {net_summary['cities']}")
+        logger.info(f"Типов топлива: {net_summary['fuel_types']}")
+        logger.info(f"Средняя цена: {net_summary['avg_price']:.2f} руб/ед.")
+    
+    if summary['errors']:
+        logger.warning("Ошибки:")
+        for network, error in summary['errors'].items():
+            logger.warning(f"  {network}: {error}")
 
 
 def print_orchestrator_summary(summary, duration):
@@ -595,8 +667,8 @@ def main():
             level="DEBUG"
         )
     
-    print("=== Региональный парсер цен на топливо ===")
-    print("=" * 60)
+    logger.info("=== Региональный парсер цен на топливо ===")
+    logger.info("=" * 60)
     
     # Показать список регионов
     if args.list_regions:
@@ -611,13 +683,13 @@ def main():
             success = run_regional_parsing_standalone(args)
         
         if success:
-            print(f"\n[OK] Парсинг завершен успешно: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("[FOLDER] Результаты сохранены в текущей директории")
+            logger.success(f"Парсинг завершен успешно: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("Результаты сохранены в текущей директории")
             if not args.disable_history:
-                print("[HISTORY] Данные также сохранены в систему истории: data/regional_history/")
-                print("[HISTORY] Для анализа истории используйте: python src/history_utils.py --help")
+                logger.info("Данные также сохранены в систему истории: data/regional_history/")
+                logger.info("Для анализа истории используйте: python src/history_utils.py --help")
         else:
-            print("\n[ERROR] Парсинг завершился с ошибками")
+            logger.error("Парсинг завершился с ошибками")
             sys.exit(1)
             
     except KeyboardInterrupt:

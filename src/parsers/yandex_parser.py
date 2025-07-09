@@ -50,7 +50,7 @@ class YandexMapsParser(BaseParser):
         scroll_count = self.config.get('scroll_count', 3)
         
         for i in range(scroll_count):
-            logger.debug(f"Прокрутка {i+1}/{scroll_count}")
+            logger.info(f"Прокрутка {i+1}/{scroll_count}")
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             sleep(2)
     
@@ -86,7 +86,7 @@ class YandexMapsParser(BaseParser):
     
     def _parse_organization_page(self, url: str) -> Dict[str, Any]:
         """Парсит страницу отдельной организации"""
-        logger.debug(f"Парсинг организации: {url}")
+        logger.info(f"Парсинг организации: {url}")
         
         self.driver.get(url)
         sleep(random.uniform(2, 5))

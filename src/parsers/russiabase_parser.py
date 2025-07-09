@@ -83,7 +83,7 @@ class RussiaBaseParser(BaseParser):
                 if station_data:
                     stations.append(station_data)
             except Exception as e:
-                logger.debug(f"Ошибка парсинга элемента станции: {e}")
+                logger.warning(f"Ошибка парсинга элемента станции: {e}")
                 continue
         
         return stations
@@ -115,7 +115,7 @@ class RussiaBaseParser(BaseParser):
             }
             
         except Exception as e:
-            logger.debug(f"Ошибка извлечения данных станции: {e}")
+            logger.warning(f"Ошибка извлечения данных станции: {e}")
             return None
     
     def parse_station_data(self, raw_data: Any) -> List[Dict[str, Any]]:
@@ -176,7 +176,7 @@ class RussiaBaseParser(BaseParser):
                         break
                         
         except Exception as e:
-            logger.debug(f"Ошибка извлечения цен: {e}")
+            logger.warning(f"Ошибка извлечения цен: {e}")
         
         return prices
 
@@ -388,7 +388,7 @@ class RussiaBaseRegionalParser(BaseParser):
                                 return regions
                                 
                     except (json.JSONDecodeError, ValueError, KeyError) as e:
-                        logger.debug(f"Ошибка парсинга JSON для паттерна {pattern}: {e}")
+                        logger.warning(f"Ошибка парсинга JSON для паттерна {pattern}: {e}")
                         continue
                         
         except Exception as e:
